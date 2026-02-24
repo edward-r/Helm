@@ -2,6 +2,7 @@ import { useAgentStore } from '../store/useAgentStore'
 import InputPanel from './InputPanel'
 import MessageBubble from './MessageBubble'
 import TimelineFeed from './TimelineFeed'
+import ToolApprovalModal from './ToolApprovalModal'
 
 const WorkspaceLayout = () => {
   const isStreaming = useAgentStore((state) => state.isStreaming)
@@ -48,6 +49,7 @@ const WorkspaceLayout = () => {
         </div>
         <InputPanel />
       </main>
+      <ToolApprovalModal />
     </div>
   )
 }

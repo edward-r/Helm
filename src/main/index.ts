@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createIPCHandler } from 'electron-trpc/main'
@@ -9,28 +10,50 @@ import icon from '../../resources/icon.png?asset'
 
 let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null
 
+const pendingApprovals = new Map<string, (decision: { approved: boolean }) => void>()
+
 const timestamp = (): string => new Date().toISOString()
 
-const createOnToolApproval = (autoApprove: boolean): ExecutorInput['onToolApproval'] => {
-  return async ({ plan }) => {
+const createOnToolApproval = (
+  autoApprove: boolean,
+  emit?: (event: ExecutorStreamEvent) => void,
+): ExecutorInput['onToolApproval'] => {
+  return async ({ call, plan }) => {
     if (autoApprove) {
       return { approved: true }
     }
-    return {
-      approved: false,
-      reason: `Tool "${plan.toolName}" requires approval and auto-approval is disabled.`,
+
+    const callId = call.id && call.id.trim().length > 0 ? call.id : randomUUID()
+
+    if (emit) {
+      emit({
+        event: 'tool_approval_required',
+        timestamp: timestamp(),
+        callId,
+        toolName: plan.toolName,
+        plan,
+      })
     }
+
+    const approvalPromise = new Promise<{ approved: boolean }>((resolve) => {
+      pendingApprovals.set(callId, resolve)
+    })
+
+    return approvalPromise.then((decision) =>
+      decision.approved ? { approved: true } : { approved: false },
+    )
   }
 }
 
 const runExecutor = async (input: ExecutorRunInput) => {
   const autoApprove = input.autoApprove === true
+  const onToolApproval = autoApprove ? createOnToolApproval(true, () => undefined) : undefined
   return executeExecutor({
     systemPrompt: input.systemPrompt,
     userIntent: input.userIntent,
     model: input.model,
     maxIterations: input.maxIterations,
-    onToolApproval: createOnToolApproval(autoApprove),
+    onToolApproval,
   })
 }
 
@@ -53,7 +76,7 @@ const streamExecutor = async (
     maxIterations: input.maxIterations,
     onThinkingEvent,
     onToolEvent,
-    onToolApproval: createOnToolApproval(autoApprove),
+    onToolApproval: createOnToolApproval(autoApprove, emit),
   })
 
   emit({ event: 'executor.complete', timestamp: timestamp(), result })
@@ -62,6 +85,15 @@ const streamExecutor = async (
 const appRouter = createAppRouter({
   runExecutor,
   streamExecutor,
+  resolveToolApproval: async ({ callId, approved }) => {
+    const resolver = pendingApprovals.get(callId)
+    if (!resolver) {
+      return { ok: false }
+    }
+    resolver({ approved })
+    pendingApprovals.delete(callId)
+    return { ok: true }
+  },
 })
 
 function createWindow(): BrowserWindow {

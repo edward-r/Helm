@@ -321,10 +321,20 @@ const buildGeminiToolResponsePayload = (
   content: Message['content'],
   toolCallId: string,
 ): Record<string, unknown> => {
-  return {
-    toolCallId,
-    content: serializeGeminiToolResponseContent(content),
+  const textContent = serializeGeminiToolResponseContent(content)
+
+  try {
+    const parsed = JSON.parse(textContent)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // Fall through if it's just raw text.
   }
+
+  void toolCallId
+
+  return { result: textContent }
 }
 
 const serializeGeminiToolResponseContent = (content: Message['content']): string => {

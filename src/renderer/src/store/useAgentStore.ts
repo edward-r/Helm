@@ -2,7 +2,12 @@ import type { Unsubscribable } from '@trpc/client'
 import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
-import type { ExecutorResult, ExecutorRunInput, ExecutorStreamEvent } from '../../../shared/trpc'
+import type {
+  ExecutorResult,
+  ExecutorRunInput,
+  ExecutorStreamEvent,
+  ToolExecutionPlan,
+} from '../../../shared/trpc'
 
 type AgentState = {
   systemPrompt: string
@@ -14,6 +19,7 @@ type AgentState = {
   finalResult: ExecutorResult | null
   streamError: string | null
   isStreaming: boolean
+  pendingApproval: { callId: string; toolName: string; plan: ToolExecutionPlan } | null
   setSystemPrompt: (value: string) => void
   setUserIntent: (value: string) => void
   setModel: (value: string) => void
@@ -22,6 +28,7 @@ type AgentState = {
   clearRun: () => void
   executeIntent: () => void
   stopExecution: () => void
+  submitApproval: (approved: boolean) => Promise<void>
 }
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.'
@@ -56,6 +63,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   finalResult: null,
   streamError: null,
   isStreaming: false,
+  pendingApproval: null,
   setSystemPrompt: (value) => set({ systemPrompt: value }),
   setUserIntent: (value) => set({ userIntent: value }),
   setModel: (value) => set({ model: value }),
@@ -66,6 +74,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       events: [],
       finalResult: null,
       streamError: null,
+      pendingApproval: null,
     }),
   executeIntent: () => {
     const { systemPrompt, userIntent, model, maxIterations, autoApprove } = get()
@@ -84,6 +93,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       finalResult: null,
       streamError: null,
       isStreaming: true,
+      pendingApproval: null,
     })
 
     const maxIterationsValue = normalizeMaxIterations(maxIterations)
@@ -98,26 +108,57 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     activeSubscription = trpcClient.executorStream.subscribe(input, {
       onData: (event) => {
-        set((state) => ({
-          events: [...state.events, event],
-          ...(event.event === 'executor.complete'
-            ? { finalResult: event.result, isStreaming: false }
-            : {}),
-        }))
+        set((state) => {
+          const nextEvents = [...state.events, event]
+          const nextState: Partial<AgentState> = { events: nextEvents }
+
+          if (event.event === 'executor.complete') {
+            nextState.finalResult = event.result
+            nextState.isStreaming = false
+            nextState.pendingApproval = null
+          }
+
+          if (event.event === 'tool_approval_required') {
+            nextState.pendingApproval = {
+              callId: event.callId,
+              toolName: event.toolName,
+              plan: event.plan,
+            }
+          }
+
+          return nextState
+        })
       },
       onError: (error) => {
         const message = error instanceof Error ? error.message : 'Unknown error'
-        set({ streamError: message, isStreaming: false })
+        set({ streamError: message, isStreaming: false, pendingApproval: null })
         stopActiveSubscription()
       },
       onComplete: () => {
-        set({ isStreaming: false })
+        set({ isStreaming: false, pendingApproval: null })
         stopActiveSubscription()
       },
     })
   },
   stopExecution: () => {
     stopActiveSubscription()
-    set({ isStreaming: false })
+    set({ isStreaming: false, pendingApproval: null })
+  },
+  submitApproval: async (approved: boolean) => {
+    const pendingApproval = get().pendingApproval
+    if (!pendingApproval) {
+      return
+    }
+
+    try {
+      await trpcClient.resolveToolApproval.mutate({
+        callId: pendingApproval.callId,
+        approved,
+      })
+      set({ pendingApproval: null })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send approval.'
+      set({ streamError: message, pendingApproval: null })
+    }
   },
 }))

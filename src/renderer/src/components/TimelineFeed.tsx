@@ -122,6 +122,16 @@ const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem
     }
   }
 
+  if (event.event === 'tool_approval_required') {
+    return {
+      id: `approval-${index}-${event.timestamp}`,
+      label: `Approval needed for ${event.toolName}`,
+      detail: event.plan.riskReason ?? 'Awaiting approval to proceed.',
+      status: 'neutral',
+      timestamp: formatTimestamp(event.timestamp),
+    }
+  }
+
   if (event.event === 'thinking') {
     return buildThinkingItem(event, index)
   }

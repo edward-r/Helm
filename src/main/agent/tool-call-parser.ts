@@ -44,32 +44,26 @@ export const parseToolCallsFromContent = (content: string): ToolCallParseResult 
   const fenced = extractFencedJson(trimmed)
   if (fenced) {
     const parsed = safeParseJson(fenced)
-    if (!parsed.ok) {
-      return {
-        ok: false,
-        error: { code: 'INVALID_JSON', message: 'Tool call JSON is invalid.' },
+    if (parsed.ok) {
+      const container = parseToolCallContainer(parsed.value, 'content_json')
+      if (container) {
+        return container
       }
     }
-    return parseToolCallContainer(parsed.value, 'content_json')
   }
 
   const candidate = extractJsonCandidate(trimmed)
-  if (!candidate) {
-    return null
-  }
-
-  const parsed = safeParseJson(candidate)
-  if (!parsed.ok) {
-    if (looksLikeToolCall(trimmed)) {
-      return {
-        ok: false,
-        error: { code: 'INVALID_JSON', message: 'Tool call JSON is invalid.' },
+  if (candidate) {
+    const parsedCandidate = safeParseJson(candidate)
+    if (parsedCandidate.ok) {
+      const container = parseToolCallContainer(parsedCandidate.value, 'content_text')
+      if (container) {
+        return container
       }
     }
-    return null
   }
 
-  return parseToolCallContainer(parsed.value, 'content_text')
+  return null
 }
 
 const parseToolCallContainer = (
@@ -321,10 +315,6 @@ const safeParseJson = (text: string): { ok: true; value: unknown } | { ok: false
   } catch {
     return { ok: false }
   }
-}
-
-const looksLikeToolCall = (text: string): boolean => {
-  return /"tool"|"toolCalls"|"tool_calls"|"toolName"|"function"/i.test(text)
 }
 
 const getArray = (record: Record<string, unknown>, keys: string[]): unknown[] | null => {

@@ -1,3 +1,6 @@
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 import type { ExecutorResult } from '../../../shared/trpc'
 
 type MessageBubbleProps = {
@@ -30,7 +33,11 @@ const MessageBubble = ({ result }: MessageBubbleProps) => {
         {title}
         {meta ? <span className="message-meta">{meta}</span> : null}
       </div>
-      <div className="message-body">{body}</div>
+      <div className="message-body markdown-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {body}
+        </ReactMarkdown>
+      </div>
     </div>
   )
 }

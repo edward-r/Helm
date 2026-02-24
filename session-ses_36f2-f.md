@@ -2,7 +2,2309 @@
 
 **Session ID:** ses_36f2e7ebbffeXsUuO21GQ5PFng
 **Created:** 2/24/2026, 12:02:55 PM
-**Updated:** 2/24/2026, 4:33:28 PM
+**Updated:** 2/24/2026, 4:19:37 PM
+
+---
+
+## User
+
+---
+
+## Assistant (Compaction · gpt-5.2-codex · 34.7s)
+
+---
+## Goal
+
+Port the original prompt-maker CLI logic into the new Electron app (Milestone 3), including the core LLM package and agent tooling, and wire it into a tRPC bridge for streaming events. Maintain secure Electron defaults and use puppeteer-core with chrome-launcher.
+
+## Instructions
+
+- Execute Milestone 1 and 2 first (scaffold + ping/pong tRPC bridge).
+- Do NOT proceed to Milestone 3 until ping/pong is verified in the React UI.
+- Milestone 3: copy packages/core and src/agent logic from `/Users/eroberts/Projects/prompt-maker` into the Electron app, update browser.ts to puppeteer-core + chrome-launcher, and wrap `executeExecutor` in a tRPC mutation/subscription to stream JSONL/agent events.
+- Use secure Electron settings: nodeIntegration false, contextIsolation true, sandbox true.
+- Keep renderer thin; no Node APIs in renderer.
+
+## Discoveries
+
+- The scaffold originally had an absurdly long package name, causing Vite 431 header errors. Renamed to `helm`/`Helm` (package.json, electron-builder.yml, README, appId).
+- Preload sandbox couldn’t import `@electron-toolkit/preload` or `electron-trpc/main`. Implemented a minimal preload with `ipcRenderer` and exposed `window.electronTRPC` manually plus `window.api.versions`.
+- Ping/pong tRPC bridge was verified after downgrading `@trpc/client`/`@trpc/server` to v10 (electron-trpc requires v10 runtime).
+- puppeteer in original CLI uses `puppeteer` (bundled); the plan requires `puppeteer-core + chrome-launcher`.
+- Some CLI dependencies needed for Milestone 3: `@google/generative-ai`, `@mozilla/readability`, `jsdom`, `pdfjs-dist`, `turndown`, `zod`.
+
+## Accomplished
+
+Milestones 1–2:
+- Scaffolded electron-vite React TS app.
+- Added tRPC ping/pong bridge (main/preload/renderer).
+- Verified ping/pong in UI after fixing preload and tRPC version mismatch.
+
+Fixes:
+- Normalized app naming to `Helm`, updated appId, package-lock.
+- Updated preload to expose `window.electronTRPC` and `window.api.versions` with sandbox enabled.
+
+Milestone 3 (in progress):
+- Copied core LLM package and agent logic into Electron main under `src/main`.
+- Added `src/main/core/**` with LLM types, message adapters, OpenAI & Gemini providers, PDF extraction.
+- Added `src/main/agent/**` (executor, tool parsing, tool planning, tool execution results, tool safety).
+- Added `src/main/agent/tools/**` (browser, fs, vision, generate-image, registry).
+- Added `src/main/config.ts`, `src/main/model-providers.ts`, `src/main/tui/theme/theme-types.ts`.
+- Added `src/main/tools/**` (read-web-page, search-web, tool-registry).
+- Added `src/main/scrape/**` (markdown, readability, puppeteer-client).
+- Updated puppeteer logic to `puppeteer-core` and chrome-launcher in `src/main/scrape/puppeteer-client.ts` (resolve executablePath with `Launcher.getFirstInstallation()` and use `puppeteer-core`).
+
+Dependencies:
+- Added runtime deps in `package.json`: `@google/generative-ai`, `@mozilla/readability`, `jsdom`, `pdfjs-dist`, `turndown`, `zod`.
+- Removed `@types/mozilla__readability` after npm install failed (nonexistent version).
+- `npm install` completed.
+
+Config / aliasing:
+- Added TS path alias in `tsconfig.node.json` for `@prompt-maker/core` -> `src/main/core`.
+- Added `electron.vite.config.ts` main alias for `@prompt-maker/core`.
+
+tRPC:
+- Expanded `src/shared/trpc.ts` to include executor types, zod input, and a `createAppRouter(deps)` with `executorRun` mutation and `executorStream` subscription (uses observable).
+- Added `src/shared/agent-events.ts` for minimal `ThinkingEvent`, `ToolSuccessEvent`, `ToolErrorEvent`.
+
+## Next Steps (important)
+
+1. **Wire tRPC router in main**:
+   - Update `src/main/index.ts` to use `createAppRouter` instead of static `appRouter`.
+   - Implement `runExecutor` and `streamExecutor` deps that call `executeExecutor` and emit events with timestamps (also emit a final `executor.complete` event).
+   - Add a simple auto-approval flow (if `autoApprove` true, approve dangerous tools automatically; else deny or provide default behavior).
+2. **Fix remaining imports / types**:
+   - Ensure agent files reference `@prompt-maker/core` alias works (tsconfig + vite alias are in place).
+   - Confirm `read-web-page` and `search-web` imports resolve to `../scrape/puppeteer-client`.
+3. **Add missing dependencies to package-lock**:
+   - `npm install` already ran; verify package-lock has new deps.
+4. **Renderer/UI (later)**:
+   - Don’t proceed with Milestone 4 yet; first complete Milestone 3 by verifying executor stream events from tRPC.
+5. **Sanity check build**:
+   - Run `npm run dev` and ensure no build errors from new files.
+
+## Relevant files / directories
+
+### Main additions (Milestone 3)
+- `src/main/core/`
+  - `index.ts`
+  - `lib/llm.ts`
+  - `lib/llm/index.ts`
+  - `lib/llm/types.ts`
+  - `lib/llm/message-adapters.ts`
+  - `lib/llm/providers/openai.ts`
+  - `lib/llm/providers/gemini.ts`
+  - `lib/llm/pdf/extract.ts`
+- `src/main/agent/`
+  - `executor.ts`
+  - `tool-call-parser.ts`
+  - `tool-execution-plan.ts`
+  - `tool-execution-result.ts`
+  - `tool-safety.ts`
+  - `tools/` (browser.ts, fs.ts, vision.ts, generate-image.ts, registry.ts, tool-types.ts, index.ts)
+- `src/main/tools/`
+  - `read-web-page.ts`
+  - `search-web.ts`
+  - `tool-registry.ts`
+- `src/main/scrape/`
+  - `puppeteer-client.ts`
+  - `markdown.ts`
+  - `readability.ts`
+- `src/main/config.ts`
+- `src/main/model-providers.ts`
+- `src/main/tui/theme/theme-types.ts`
+- `src/main/generate/fs-utils.ts`
+
+### Shared
+- `src/shared/trpc.ts` (now includes executor types + createAppRouter + zod schema)
+- `src/shared/agent-events.ts`
+
+### Electron plumbing
+- `src/main/index.ts` (needs update to use createAppRouter deps)
+- `src/preload/index.ts` (manual electronTRPC bridge + window.api.versions)
+- `src/preload/index.d.ts` (defines window.api + electronTRPC)
+- `src/renderer/src/trpc.ts` (tRPC client)
+- `src/renderer/src/App.tsx` (ping UI)
+- `src/renderer/src/components/Versions.tsx` (uses window.api.versions)
+
+### Config/build
+- `electron.vite.config.ts` (main alias for `@prompt-maker/core`)
+- `tsconfig.node.json` (paths for `@prompt-maker/core`)
+- `package.json` (deps include @google/generative-ai, jsdom, pdfjs-dist, turndown, zod; tRPC v10)
+- `electron-builder.yml` (appId/productName set to Helm)
+
+---
+
+---
+
+## User
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 1.7s)
+
+_Thinking:_
+
+**Preparing to inspect main index files**
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/main/index.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/main/index.ts</path>
+<type>file</type>
+<content>1: import { app, shell, BrowserWindow } from 'electron'
+2: import { join } from 'path'
+3: import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+4: import { createIPCHandler } from 'electron-trpc/main'
+5: import { appRouter } from '../shared/trpc'
+6: import type { AppRouter } from '../shared/trpc'
+7: import icon from '../../resources/icon.png?asset'
+8: 
+9: let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null
+10: 
+11: function createWindow(): BrowserWindow {
+12:   // Create the browser window.
+13:   const mainWindow = new BrowserWindow({
+14:     width: 900,
+15:     height: 670,
+16:     show: false,
+17:     autoHideMenuBar: true,
+18:     ...(process.platform === 'linux' ? { icon } : {}),
+19:     webPreferences: {
+20:       preload: join(__dirname, '../preload/index.js'),
+21:       contextIsolation: true,
+22:       nodeIntegration: false,
+23:       sandbox: true
+24:     }
+25:   })
+26: 
+27:   mainWindow.on('ready-to-show', () => {
+28:     mainWindow.show()
+29:   })
+30: 
+31:   mainWindow.webContents.setWindowOpenHandler((details) => {
+32:     shell.openExternal(details.url)
+33:     return { action: 'deny' }
+34:   })
+35: 
+36:   // HMR for renderer base on electron-vite cli.
+37:   // Load the remote URL for development or the local html file for production.
+38:   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+39:     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+40:   } else {
+41:     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+42:   }
+43: 
+44:   return mainWindow
+45: }
+46: 
+47: function registerWindow(window: BrowserWindow): void {
+48:   if (!ipcHandler) {
+49:     ipcHandler = createIPCHandler({
+50:       router: appRouter,
+51:       windows: [window]
+52:     })
+53:     return
+54:   }
+55: 
+56:   ipcHandler.attachWindow(window)
+57: }
+58: 
+59: // This method will be called when Electron has finished
+60: // initialization and is ready to create browser windows.
+61: // Some APIs can only be used after this event occurs.
+62: app.whenReady().then(() => {
+63:   // Set app user model id for windows
+64:   electronApp.setAppUserModelId('com.helm.app')
+65: 
+66:   // Default open or close DevTools by F12 in development
+67:   // and ignore CommandOrControl + R in production.
+68:   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+69:   app.on('browser-window-created', (_, window) => {
+70:     optimizer.watchWindowShortcuts(window)
+71:   })
+72: 
+73:   const mainWindow = createWindow()
+74:   registerWindow(mainWindow)
+75: 
+76:   app.on('activate', function () {
+77:     // On macOS it's common to re-create a window in the app when the
+78:     // dock icon is clicked and there are no other windows open.
+79:     if (BrowserWindow.getAllWindows().length === 0) {
+80:       const newWindow = createWindow()
+81:       registerWindow(newWindow)
+82:     }
+83:   })
+84: })
+85: 
+86: // Quit when all windows are closed, except on macOS. There, it's common
+87: // for applications and their menu bar to stay active until the user quits
+88: // explicitly with Cmd + Q.
+89: app.on('window-all-closed', () => {
+90:   if (process.platform !== 'darwin') {
+91:     app.quit()
+92:   }
+93: })
+94: 
+95: // In this file you can include the rest of your app's specific main process
+96: // code. You can also put them in separate files and require them here.
+
+(End of file - total 96 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 1.6s)
+
+_Thinking:_
+
+**Planning to update router and inspect dependencies**
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/shared/trpc.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/shared/trpc.ts</path>
+<type>file</type>
+<content>1: import { initTRPC } from '@trpc/server'
+2: import { observable } from '@trpc/server/observable'
+3: import { z } from 'zod'
+4: 
+5: import type { AgentEvent } from './agent-events'
+6: 
+7: const t = initTRPC.create()
+8: 
+9: export type TextPart = { type: 'text'; text: string }
+10: export type ImagePart = { type: 'image'; mimeType: string; data: string }
+11: export type VideoPart = { type: 'video_uri'; mimeType: string; fileUri: string }
+12: export type PdfPart = {
+13:   type: 'pdf'
+14:   mimeType: 'application/pdf'
+15:   filePath: string
+16:   fileUri?: string
+17: }
+18: 
+19: export type MessageContent = string | (TextPart | ImagePart | VideoPart | PdfPart)[]
+20: 
+21: export type ToolCall = {
+22:   id?: string
+23:   name: string
+24:   arguments: unknown
+25: }
+26: 
+27: export type ToolExecutionPlan = {
+28:   toolName: string
+29:   callId?: string
+30:   args: Record<string, unknown>
+31:   argsSummary: string[]
+32:   summary: string
+33:   risk: 'safe' | 'dangerous'
+34:   riskReason?: string
+35:   preflight: string[]
+36:   steps: string[]
+37:   expectedOutputs: string[]
+38: }
+39: 
+40: export type Message = {
+41:   role: 'system' | 'user' | 'assistant' | 'tool'
+42:   content: MessageContent
+43:   toolCalls?: ToolCall[]
+44:   tool_calls?: ToolCall[]
+45:   toolCallId?: string
+46:   tool_call_id?: string
+47: }
+48: 
+49: export type ExecutorErrorCode =
+50:   | 'LLM_CALL_FAILED'
+51:   | 'LLM_RESPONSE_INVALID'
+52:   | 'TOOL_CALL_PARSE_ERROR'
+53:   | 'TOOL_CALL_VALIDATION_ERROR'
+54:   | 'TOOL_PLAN_ERROR'
+55:   | 'MAX_ITERATIONS_EXCEEDED'
+56:   | 'TOOL_REGISTRY_INVALID'
+57: 
+58: export type ExecutorError = {
+59:   code: ExecutorErrorCode
+60:   message: string
+61:   details?: {
+62:     toolName?: string
+63:     callIndex?: number
+64:     errorMessage?: string
+65:     source?: 'llm_tool_calls' | 'content_json' | 'content_text'
+66:     parseCode?: string
+67:     planCode?: string
+68:     maxIterations?: number
+69:     bestKnownText?: string
+70:   }
+71: }
+72: 
+73: export type ExecutorSuccess = {
+74:   ok: true
+75:   value: {
+76:     text: string
+77:     messages: Message[]
+78:     toolCalls?: ToolCall[]
+79:     toolPlans?: ToolExecutionPlan[]
+80:   }
+81: }
+82: 
+83: export type ExecutorFailure = {
+84:   ok: false
+85:   error: ExecutorError
+86:   messages: Message[]
+87:   toolPlans?: ToolExecutionPlan[]
+88: }
+89: 
+90: export type ExecutorResult = ExecutorSuccess | ExecutorFailure
+91: 
+92: export type ExecutorRunInput = {
+93:   systemPrompt: string
+94:   userIntent: string
+95:   model: string
+96:   maxIterations?: number
+97:   autoApprove?: boolean
+98: }
+99: 
+100: export type ExecutorStreamEvent =
+101:   | (AgentEvent & { timestamp: string })
+102:   | { event: 'executor.complete'; timestamp: string; result: ExecutorResult }
+103: 
+104: export const executorRunInputSchema = z.object({
+105:   systemPrompt: z.string().min(1),
+106:   userIntent: z.string().min(1),
+107:   model: z.string().min(1),
+108:   maxIterations: z.number().int().positive().optional(),
+109:   autoApprove: z.boolean().optional(),
+110: })
+111: 
+112: type ExecutorRouterDeps = {
+113:   runExecutor: (input: ExecutorRunInput) => Promise<ExecutorResult>
+114:   streamExecutor: (
+115:     input: ExecutorRunInput,
+116:     emit: (event: ExecutorStreamEvent) => void,
+117:   ) => Promise<void>
+118: }
+119: 
+120: export const createAppRouter = (deps: ExecutorRouterDeps) => {
+121:   return t.router({
+122:     ping: t.procedure.query(() => 'pong'),
+123:     executorRun: t.procedure
+124:       .input(executorRunInputSchema)
+125:       .mutation(async ({ input }) => deps.runExecutor(input)),
+126:     executorStream: t.procedure.input(executorRunInputSchema).subscription(({ input }) => {
+127:       return observable<ExecutorStreamEvent>((observer) => {
+128:         let active = true
+129: 
+130:         const emit = (event: ExecutorStreamEvent): void => {
+131:           if (!active) {
+132:             return
+133:           }
+134:           observer.next(event)
+135:         }
+136: 
+137:         void deps
+138:           .streamExecutor(input, emit)
+139:           .then(() => {
+140:             if (active) {
+141:               observer.complete()
+142:             }
+143:           })
+144:           .catch((error) => {
+145:             if (active) {
+146:               observer.error(error instanceof Error ? error : new Error('Executor stream failed.'))
+147:             }
+148:           })
+149: 
+150:         return () => {
+151:           active = false
+152:         }
+153:       })
+154:     }),
+155:   })
+156: }
+157: 
+158: export type AppRouter = ReturnType<typeof createAppRouter>
+
+(End of file - total 158 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 1.5s)
+
+_Thinking:_
+
+**Identifying executor dependencies**
+
+I'm focusing on creating dependencies related to the executor and locating where executeExecutor is defined or used next.
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/main/agent/executor.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/main/agent/executor.ts</path>
+<type>file</type>
+<content>1: import type { LLMResult, ToolCall, ToolDefinition } from '@prompt-maker/core'
+2: import { callLLM, type Message } from '@prompt-maker/core'
+3: 
+4: import type { AgentTool } from './tools/tool-types'
+5: import { ALL_TOOLS } from './tools'
+6: import type { ThinkingEvent, ToolErrorEvent, ToolSuccessEvent } from '../../shared/agent-events'
+7: import {
+8:   parseToolCallsFromResult,
+9:   type ToolCallParseError,
+10:   type ToolCallSource,
+11: } from './tool-call-parser'
+12: import {
+13:   buildToolExecutionPlan,
+14:   type ToolExecutionPlan,
+15:   type ToolPlanError,
+16: } from './tool-execution-plan'
+17: import {
+18:   buildToolExecutionEnvelope,
+19:   serializeToolExecutionEnvelope,
+20:   type ToolExecutionEnvelope,
+21:   type ToolExecutionError,
+22:   type ToolExecutionIo,
+23:   summarizeToolExecution,
+24: } from './tool-execution-result'
+25: 
+26: export type ExecutorInput = {
+27:   systemPrompt: string
+28:   userIntent: string
+29:   model: string
+30:   tools?: AgentTool[]
+31:   maxIterations?: number
+32:   onThinkingEvent?: (event: ThinkingEvent) => void
+33:   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
+34:   onToolEvent?: (event: ToolExecutionEvent) => void
+35: }
+36: 
+37: export type ToolExecutionEvent = ToolSuccessEvent | ToolErrorEvent
+38: 
+39: export type ToolApprovalDecision = { approved: true } | { approved: false; reason?: string }
+40: 
+41: export type ToolApprovalRequest = {
+42:   call: ToolCall
+43:   plan: ToolExecutionPlan
+44: }
+45: 
+46: export type ExecutorErrorCode =
+47:   | 'LLM_CALL_FAILED'
+48:   | 'LLM_RESPONSE_INVALID'
+49:   | 'TOOL_CALL_PARSE_ERROR'
+50:   | 'TOOL_CALL_VALIDATION_ERROR'
+51:   | 'TOOL_PLAN_ERROR'
+52:   | 'MAX_ITERATIONS_EXCEEDED'
+53:   | 'TOOL_REGISTRY_INVALID'
+54: 
+55: export type ExecutorError = {
+56:   code: ExecutorErrorCode
+57:   message: string
+58:   details?: {
+59:     toolName?: string
+60:     callIndex?: number
+61:     errorMessage?: string
+62:     source?: ToolCallSource
+63:     parseCode?: ToolCallParseError['code']
+64:     planCode?: ToolPlanError['code']
+65:     maxIterations?: number
+66:     bestKnownText?: string
+67:   }
+68: }
+69: 
+70: export type ExecutorSuccess = {
+71:   ok: true
+72:   value: {
+73:     text: string
+74:     messages: Message[]
+75:     toolCalls?: ToolCall[]
+76:     toolPlans?: ToolExecutionPlan[]
+77:   }
+78: }
+79: 
+80: export type ExecutorFailure = {
+81:   ok: false
+82:   error: ExecutorError
+83:   messages: Message[]
+84:   toolPlans?: ToolExecutionPlan[]
+85: }
+86: 
+87: export type ExecutorResult = ExecutorSuccess | ExecutorFailure
+88: 
+89: export type NormalizedLLMResponse =
+90:   | { kind: 'finalText'; text: string }
+91:   | { kind: 'toolCalls'; calls: ToolCall[]; source: ToolCallSource }
+92:   | { kind: 'toolCallError'; error: ToolCallParseError; source: ToolCallSource | null }
+93:   | { kind: 'responseError'; message: string }
+94: 
+95: const DEFAULT_MAX_ITERATIONS = 20
+96: const BEST_KNOWN_TEXT_MAX = 240
+97: 
+98: export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
+99:   const history = createInitialHistory(input.systemPrompt, input.userIntent)
+100:   const toolDefinitions: ToolDefinition[] = ALL_TOOLS
+101:   const registryError = validateToolRegistry(ALL_TOOLS)
+102:   if (registryError) {
+103:     return { ok: false, error: registryError, messages: history }
+104:   }
+105:   const toolExecutorsResult = resolveToolExecutors(input.tools)
+106:   if (!toolExecutorsResult.ok) {
+107:     return { ok: false, error: toolExecutorsResult.error, messages: history }
+108:   }
+109:   const toolExecutors = toolExecutorsResult.value
+110:   const executorRegistryError = validateToolRegistry(toolExecutors)
+111:   if (executorRegistryError) {
+112:     return { ok: false, error: executorRegistryError, messages: history }
+113:   }
+114:   const toolMap = new Map<string, AgentTool>(
+115:     toolExecutors.map((tool: AgentTool) => [tool.name, tool]),
+116:   )
+117:   const maxIterations = input.maxIterations ?? DEFAULT_MAX_ITERATIONS
+118: 
+119:   let currentHistory = history
+120:   let lastPlans: ToolExecutionPlan[] | undefined
+121:   let bestKnownText: string | null = null
+122: 
+123:   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+124:     const callIndex = iteration + 1
+125:     emitThinkingEvent(input.onThinkingEvent, {
+126:       phase: 'llm_call_start',
+127:       callIndex,
+128:       iteration: callIndex,
+129:       model: input.model,
+130:       summary: 'Calling model…',
+131:     })
+132:     const startedAt = Date.now()
+133:     let response: LLMResult
+134:     try {
+135:       response = await callLLM(currentHistory, input.model, toolDefinitions)
+136:       // eslint-disable-next-line @typescript-eslint/no-unused-vars
+137:     } catch (error) {
+138:       const errorMessage = error instanceof Error ? error.message : 'Unknown model error.'
+139:       emitThinkingEvent(input.onThinkingEvent, {
+140:         phase: 'llm_call_end',
+141:         callIndex,
+142:         iteration: callIndex,
+143:         model: input.model,
+144:         result: 'error',
+145:         durationMs: Date.now() - startedAt,
+146:         summary: `Model call failed: ${errorMessage}`,
+147:       })
+148:       return {
+149:         ok: false,
+150:         error: {
+151:           code: 'LLM_CALL_FAILED',
+152:           message: 'Model call failed.',
+153:           details: { callIndex, errorMessage },
+154:         },
+155:         messages: currentHistory,
+156:       }
+157:     }
+158: 
+159:     const normalized = normalizeLLMResult(response)
+160: 
+161:     const responseText = extractAssistantText(response)
+162:     if (responseText && normalized.kind === 'toolCalls' && normalized.source === 'llm_tool_calls') {
+163:       bestKnownText = truncateBestKnownText(responseText)
+164:     }
+165: 
+166:     emitThinkingEvent(
+167:       input.onThinkingEvent,
+168:       buildThinkingEndEvent(normalized, callIndex, input.model, startedAt),
+169:     )
+170: 
+171:     // Plain-text finalization: when no tool calls are present, return the
+172:     // assistant text immediately and append it once to history.
+173:     if (normalized.kind === 'finalText') {
+174:       const assistantMessage = buildAssistantMessage(normalized.text, undefined)
+175:       const finalHistory = appendMessages(currentHistory, assistantMessage)
+176:       return {
+177:         ok: true,
+178:         value: {
+179:           text: normalized.text,
+180:           messages: finalHistory,
+181:           ...(lastPlans ? { toolPlans: lastPlans } : {}),
+182:         },
+183:       }
+184:     }
+185: 
+186:     if (normalized.kind === 'responseError') {
+187:       emitThinkingEvent(input.onThinkingEvent, {
+188:         phase: 'tool_call_error',
+189:         callIndex,
+190:         iteration: callIndex,
+191:         model: input.model,
+192:         result: 'error',
+193:         errorCode: 'LLM_RESPONSE_INVALID',
+194:         summary: normalized.message,
+195:       })
+196:       return {
+197:         ok: false,
+198:         error: {
+199:           code: 'LLM_RESPONSE_INVALID',
+200:           message: normalized.message,
+201:           details: { callIndex },
+202:         },
+203:         messages: currentHistory,
+204:       }
+205:     }
+206: 
+207:     if (normalized.kind === 'toolCallError') {
+208:       emitThinkingEvent(input.onThinkingEvent, {
+209:         phase: 'tool_call_error',
+210:         callIndex,
+211:         iteration: callIndex,
+212:         model: input.model,
+213:         result: 'error',
+214:         errorCode: normalized.error.code,
+215:         summary: normalized.error.message,
+216:       })
+217:       return {
+218:         ok: false,
+219:         error: {
+220:           code: 'TOOL_CALL_PARSE_ERROR',
+221:           message: normalized.error.message,
+222:           details: {
+223:             callIndex,
+224:             parseCode: normalized.error.code,
+225:             ...(normalized.source ? { source: normalized.source } : {}),
+226:           },
+227:         },
+228:         messages: currentHistory,
+229:       }
+230:     }
+231: 
+232:     const validation = validateToolCalls(normalized.calls, toolMap)
+233:     if (!validation.ok) {
+234:       emitThinkingEvent(input.onThinkingEvent, {
+235:         phase: 'tool_call_error',
+236:         callIndex,
+237:         iteration: callIndex,
+238:         model: input.model,
+239:         result: 'error',
+240:         errorCode: validation.error.code,
+241:         summary: validation.error.message,
+242:       })
+243:       return {
+244:         ok: false,
+245:         error: validation.error,
+246:         messages: currentHistory,
+247:       }
+248:     }
+249: 
+250:     emitThinkingEvent(input.onThinkingEvent, {
+251:       phase: 'tool_call_detected',
+252:       callIndex,
+253:       iteration: callIndex,
+254:       model: input.model,
+255:       result: 'tool_calls',
+256:       toolNames: Array.from(new Set(validation.value.map((call: ToolCall) => call.name))),
+257:       summary: 'Tool calls detected.',
+258:     })
+259: 
+260:     const plansResult = buildExecutionPlans(validation.value, toolMap)
+261:     if (!plansResult.ok) {
+262:       emitThinkingEvent(input.onThinkingEvent, {
+263:         phase: 'tool_call_error',
+264:         callIndex,
+265:         iteration: callIndex,
+266:         model: input.model,
+267:         result: 'error',
+268:         errorCode: plansResult.error.code,
+269:         summary: plansResult.error.message,
+270:       })
+271:       return {
+272:         ok: false,
+273:         error: plansResult.error,
+274:         messages: currentHistory,
+275:       }
+276:     }
+277: 
+278:     const plans = plansResult.value
+279:     lastPlans = plans
+280: 
+281:     emitThinkingEvent(input.onThinkingEvent, {
+282:       phase: 'tool_plan_built',
+283:       callIndex,
+284:       iteration: callIndex,
+285:       model: input.model,
+286:       result: 'tool_calls',
+287:       toolNames: Array.from(new Set(plans.map((plan) => plan.toolName))),
+288:       summary: 'Tool execution plan prepared.',
+289:     })
+290: 
+291:     const assistantMessage = buildAssistantMessage('', validation.value)
+292:     const toolMessages = await buildToolMessages(
+293:       validation.value,
+294:       toolMap,
+295:       plans,
+296:       input.onToolApproval,
+297:       input.onToolEvent,
+298:       callIndex,
+299:     )
+300:     currentHistory = appendMessages(currentHistory, assistantMessage, ...toolMessages)
+301:   }
+302: 
+303:   // If the model never produced a plain-text answer (no tool calls), return a
+304:   // controlled error. Any non-empty assistant text seen during tool-call turns
+305:   // is surfaced as bestKnownText for diagnostics, but not returned as final output.
+306:   return {
+307:     ok: false,
+308:     error: {
+309:       code: 'MAX_ITERATIONS_EXCEEDED',
+310:       message: `Executor exceeded maxIterations (${maxIterations}) without final response.`,
+311:       details: {
+312:         maxIterations,
+313:         ...(bestKnownText ? { bestKnownText } : {}),
+314:       },
+315:     },
+316:     messages: currentHistory,
+317:     ...(lastPlans ? { toolPlans: lastPlans } : {}),
+318:   }
+319: }
+320: 
+321: const createInitialHistory = (systemPrompt: string, userIntent: string): Message[] => {
+322:   return [
+323:     { role: 'system', content: systemPrompt },
+324:     { role: 'user', content: userIntent },
+325:   ]
+326: }
+327: 
+328: const buildAssistantMessage = (content: string | null, toolCalls?: ToolCall[]): Message => {
+329:   const message: Message = {
+330:     role: 'assistant',
+331:     content: content ?? '',
+332:   }
+333: 
+334:   if (toolCalls && toolCalls.length > 0) {
+335:     message.toolCalls = toolCalls
+336:   }
+337: 
+338:   return message
+339: }
+340: 
+341: const buildToolMessages = async (
+342:   toolCalls: ToolCall[],
+343:   toolMap: Map<string, AgentTool>,
+344:   plans: ToolExecutionPlan[],
+345:   onToolApproval?: ExecutorInput['onToolApproval'],
+346:   onToolEvent?: ExecutorInput['onToolEvent'],
+347:   iteration?: number,
+348: ): Promise<Message[]> => {
+349:   const messages: Message[] = []
+350: 
+351:   for (const [index, call] of toolCalls.entries()) {
+352:     const toolCallId = call.id ?? `tool_call_${index + 1}`
+353:     const callForExecution = call.id ? call : { ...call, id: toolCallId }
+354:     const plan = plans[index]
+355:     const approval = await resolveToolApproval(callForExecution, plan, onToolApproval)
+356:     const toolResult = approval.approved
+357:       ? await executeToolCall(callForExecution, toolMap)
+358:       : buildDeniedToolResult(callForExecution, approval.reason)
+359: 
+360:     emitToolEvent(onToolEvent, toolResult, toolCallId, iteration)
+361: 
+362:     messages.push({
+363:       role: 'tool',
+364:       toolCallId,
+365:       content: serializeToolExecutionEnvelope(toolResult),
+366:     })
+367:   }
+368: 
+369:   return messages
+370: }
+371: 
+372: const resolveToolApproval = async (
+373:   call: ToolCall,
+374:   plan: ToolExecutionPlan | undefined,
+375:   onToolApproval?: ExecutorInput['onToolApproval'],
+376: ): Promise<ToolApprovalDecision> => {
+377:   if (!plan || plan.risk !== 'dangerous') {
+378:     return { approved: true }
+379:   }
+380: 
+381:   if (!onToolApproval) {
+382:     return {
+383:       approved: false,
+384:       reason: 'Tool approval required but no confirmation handler is available.',
+385:     }
+386:   }
+387: 
+388:   try {
+389:     return await onToolApproval({ call, plan })
+390:   } catch (error) {
+391:     const message = error instanceof Error ? error.message : 'Tool approval failed.'
+392:     return { approved: false, reason: message }
+393:   }
+394: }
+395: 
+396: const buildDeniedToolResult = (call: ToolCall, reason?: string): ToolExecutionEnvelope => {
+397:   return buildToolExecutionEnvelope({
+398:     call,
+399:     error: {
+400:       code: 'TOOL_APPROVAL_DENIED',
+401:       message: reason ?? `Tool "${call.name}" was denied before execution.`,
+402:       details: {
+403:         toolName: call.name,
+404:         ...(call.id ? { toolCallId: call.id } : {}),
+405:       },
+406:     },
+407:     durationMs: 0,
+408:   })
+409: }
+410: 
+411: const executeToolCall = async (
+412:   call: ToolCall,
+413:   toolMap: Map<string, AgentTool>,
+414: ): Promise<ToolExecutionEnvelope> => {
+415:   const tool = toolMap.get(call.name)
+416:   if (!tool) {
+417:     return buildToolExecutionEnvelope({
+418:       call,
+419:       error: {
+420:         code: 'TOOL_NOT_FOUND',
+421:         message: `Tool "${call.name}" is not registered.`,
+422:       },
+423:       durationMs: 0,
+424:     })
+425:   }
+426: 
+427:   const startedAt = Date.now()
+428: 
+429:   try {
+430:     const output = await tool.execute(call.arguments)
+431:     return buildToolExecutionEnvelope({
+432:       call,
+433:       output,
+434:       durationMs: Date.now() - startedAt,
+435:     })
+436:   } catch (error) {
+437:     const io = extractIoFromError(error)
+438:     return buildToolExecutionEnvelope({
+439:       call,
+440:       error: buildExecutionError(error, io),
+441:       io,
+442:       durationMs: Date.now() - startedAt,
+443:     })
+444:   }
+445: }
+446: 
+447: const extractIoFromError = (error: unknown): ToolExecutionIo => {
+448:   if (!isRecord(error)) {
+449:     return {}
+450:   }
+451:   return {
+452:     ...(typeof error.stdout === 'string' ? { stdout: error.stdout } : {}),
+453:     ...(typeof error.stderr === 'string' ? { stderr: error.stderr } : {}),
+454:     ...(typeof error.exitCode === 'number' && Number.isFinite(error.exitCode)
+455:       ? { exitCode: error.exitCode }
+456:       : {}),
+457:   }
+458: }
+459: 
+460: const buildExecutionError = (error: unknown, io: ToolExecutionIo): ToolExecutionError => {
+461:   const message = error instanceof Error ? error.message : 'Tool execution failed.'
+462:   const details: Record<string, unknown> = {}
+463:   if (isRecord(error) && typeof error.code === 'string') {
+464:     details.code = error.code
+465:   }
+466:   if (io.exitCode !== undefined) {
+467:     details.exitCode = io.exitCode
+468:   }
+469:   if (Object.keys(details).length > 0) {
+470:     return {
+471:       code: 'TOOL_EXECUTION_FAILED',
+472:       message,
+473:       details,
+474:     }
+475:   }
+476:   return {
+477:     code: 'TOOL_EXECUTION_FAILED',
+478:     message,
+479:   }
+480: }
+481: 
+482: const appendMessages = (history: Message[], ...next: Message[]): Message[] => {
+483:   return [...history, ...next]
+484: }
+485: 
+486: type ThinkingPayload = Omit<ThinkingEvent, 'event'>
+487: 
+488: const emitThinkingEvent = (
+489:   handler: ExecutorInput['onThinkingEvent'],
+490:   payload: ThinkingPayload,
+491: ): void => {
+492:   if (!handler) {
+493:     return
+494:   }
+495:   handler({ event: 'thinking', ...payload })
+496: }
+497: 
+498: const emitToolEvent = (
+499:   handler: ExecutorInput['onToolEvent'],
+500:   envelope: ToolExecutionEnvelope,
+501:   toolCallId: string,
+502:   iteration?: number,
+503: ): void => {
+504:   if (!handler) {
+505:     return
+506:   }
+507: 
+508:   const durationMs = envelope.durationMs ?? 0
+509:   const summary = summarizeToolExecution(envelope)
+510:   if (envelope.ok) {
+511:     handler({
+512:       event: 'tool_success',
+513:       toolName: envelope.toolName,
+514:       toolCallId,
+515:       durationMs,
+516:       summary,
+517:       ...(iteration !== undefined ? { iteration } : {}),
+518:     })
+519:     return
+520:   }
+521: 
+522:   const errorMessage = envelope.error?.message ?? 'Tool execution failed.'
+523:   const errorCode = envelope.error?.code
+524:   handler({
+525:     event: 'tool_error',
+526:     toolName: envelope.toolName,
+527:     toolCallId,
+528:     durationMs,
+529:     summary,
+530:     errorMessage,
+531:     ...(errorCode ? { errorCode } : {}),
+532:     ...(iteration !== undefined ? { iteration } : {}),
+533:   })
+534: }
+535: 
+536: const buildThinkingEndEvent = (
+537:   normalized: NormalizedLLMResponse,
+538:   callIndex: number,
+539:   model: string,
+540:   startedAt: number,
+541: ): ThinkingPayload => {
+542:   const durationMs = Date.now() - startedAt
+543:   if (normalized.kind === 'finalText') {
+544:     return {
+545:       phase: 'llm_call_end',
+546:       callIndex,
+547:       iteration: callIndex,
+548:       model,
+549:       result: 'final_text',
+550:       durationMs,
+551:       summary: 'Model response received.',
+552:     }
+553:   }
+554: 
+555:   if (normalized.kind === 'toolCalls') {
+556:     const toolNames = Array.from(new Set(normalized.calls.map((call: ToolCall) => call.name)))
+557:     return {
+558:       phase: 'llm_call_end',
+559:       callIndex,
+560:       iteration: callIndex,
+561:       model,
+562:       result: 'tool_calls',
+563:       toolNames,
+564:       durationMs,
+565:       summary:
+566:         toolNames.length > 0
+567:           ? `Tool calls requested: ${toolNames.join(', ')}`
+568:           : 'Tool calls requested.',
+569:     }
+570:   }
+571: 
+572:   return {
+573:     phase: 'llm_call_end',
+574:     callIndex,
+575:     iteration: callIndex,
+576:     model,
+577:     result: 'error',
+578:     durationMs,
+579:     summary: 'Model response invalid.',
+580:   }
+581: }
+582: 
+583: type ToolRegistryResult = { ok: true; value: AgentTool[] } | { ok: false; error: ExecutorError }
+584: 
+585: const resolveToolExecutors = (tools?: AgentTool[]): ToolRegistryResult => {
+586:   if (!tools || tools.length === 0) {
+587:     return { ok: true, value: ALL_TOOLS }
+588:   }
+589: 
+590:   const provided = tools.map((tool) => tool.name).sort()
+591:   const expected = ALL_TOOLS.map((tool) => tool.name).sort()
+592:   const matches =
+593:     provided.length === expected.length && provided.every((name, index) => name === expected[index])
+594:   if (!matches) {
+595:     return {
+596:       ok: false,
+597:       error: {
+598:         code: 'TOOL_REGISTRY_INVALID',
+599:         message: 'Executor tools must match ALL_TOOLS registry.',
+600:       },
+601:     }
+602:   }
+603: 
+604:   return { ok: true, value: tools }
+605: }
+606: 
+607: export const validateToolRegistry = (tools: AgentTool[]): ExecutorError | null => {
+608:   const seen = new Set<string>()
+609:   for (let index = 0; index < tools.length; index += 1) {
+610:     const tool = tools[index]
+611:     if (!tool) {
+612:       return {
+613:         code: 'TOOL_REGISTRY_INVALID',
+614:         message: `Tool at index ${index} is missing.`,
+615:       }
+616:     }
+617:     const name = tool.name.trim()
+618:     if (!name) {
+619:       return {
+620:         code: 'TOOL_REGISTRY_INVALID',
+621:         message: `Tool at index ${index} is missing a name.`,
+622:       }
+623:     }
+624:     if (seen.has(name)) {
+625:       return {
+626:         code: 'TOOL_REGISTRY_INVALID',
+627:         message: `Tool name "${name}" is duplicated in registry.`,
+628:       }
+629:     }
+630:     seen.add(name)
+631: 
+632:     if (!tool.description || !tool.description.trim()) {
+633:       return {
+634:         code: 'TOOL_REGISTRY_INVALID',
+635:         message: `Tool "${name}" is missing a description.`,
+636:       }
+637:     }
+638: 
+639:     if (!isRecord(tool.inputSchema)) {
+640:       return {
+641:         code: 'TOOL_REGISTRY_INVALID',
+642:         message: `Tool "${name}" inputSchema must be an object.`,
+643:       }
+644:     }
+645:   }
+646:   return null
+647: }
+648: 
+649: export const normalizeLLMResult = (result: LLMResult): NormalizedLLMResponse => {
+650:   const parsed = parseToolCallsFromResult(result)
+651:   if (parsed) {
+652:     if (!parsed.ok) {
+653:       return { kind: 'toolCallError', error: parsed.error, source: null }
+654:     }
+655:     return { kind: 'toolCalls', calls: parsed.value.calls, source: parsed.value.source }
+656:   }
+657: 
+658:   const text = typeof result.content === 'string' ? result.content.trim() : ''
+659:   if (text) {
+660:     return { kind: 'finalText', text }
+661:   }
+662: 
+663:   return { kind: 'responseError', message: 'LLM response did not include content or tool calls.' }
+664: }
+665: 
+666: const extractAssistantText = (result: LLMResult): string | null => {
+667:   if (typeof result.content !== 'string') {
+668:     return null
+669:   }
+670:   const trimmed = result.content.trim()
+671:   return trimmed.length > 0 ? trimmed : null
+672: }
+673: 
+674: const truncateBestKnownText = (value: string): string => {
+675:   const normalized = value.replace(/\s+/g, ' ').trim()
+676:   if (normalized.length <= BEST_KNOWN_TEXT_MAX) {
+677:     return normalized
+678:   }
+679:   return `${normalized.slice(0, Math.max(0, BEST_KNOWN_TEXT_MAX - 3))}...`
+680: }
+681: 
+682: const validateToolCalls = (
+683:   toolCalls: ToolCall[],
+684:   toolMap: Map<string, AgentTool>,
+685: ): { ok: true; value: ToolCall[] } | { ok: false; error: ExecutorError } => {
+686:   const normalized: ToolCall[] = []
+687: 
+688:   for (let index = 0; index < toolCalls.length; index += 1) {
+689:     const call = toolCalls[index]
+690:     const name = call?.name?.trim()
+691:     if (!name) {
+692:       return {
+693:         ok: false,
+694:         error: {
+695:           code: 'TOOL_CALL_VALIDATION_ERROR',
+696:           message: 'Tool call is missing a name.',
+697:           details: { callIndex: index + 1 },
+698:         },
+699:       }
+700:     }
+701: 
+702:     const tool = toolMap.get(name)
+703:     if (!tool) {
+704:       return {
+705:         ok: false,
+706:         error: {
+707:           code: 'TOOL_CALL_VALIDATION_ERROR',
+708:           message: `Tool call references unknown tool "${name}".`,
+709:           details: { toolName: name, callIndex: index + 1 },
+710:         },
+711:       }
+712:     }
+713: 
+714:     const normalizedArgs = normalizeToolArguments(call?.arguments, name)
+715:     if (!normalizedArgs.ok) {
+716:       return normalizedArgs
+717:     }
+718: 
+719:     if (expectsObjectArguments(tool.inputSchema) && !isRecord(normalizedArgs.value)) {
+720:       return {
+721:         ok: false,
+722:         error: {
+723:           code: 'TOOL_CALL_VALIDATION_ERROR',
+724:           message: `Tool call arguments for "${name}" must be an object to match schema.`,
+725:           details: { toolName: name, callIndex: index + 1 },
+726:         },
+727:       }
+728:     }
+729: 
+730:     normalized.push({
+731:       id: call?.id ?? `tool_call_${index + 1}`,
+732:       name,
+733:       arguments: normalizedArgs.value,
+734:     })
+735:   }
+736: 
+737:   return { ok: true, value: normalized }
+738: }
+739: 
+740: const normalizeToolArguments = (
+741:   value: unknown,
+742:   toolName: string,
+743: ): { ok: true; value: unknown } | { ok: false; error: ExecutorError } => {
+744:   if (value === undefined) {
+745:     return { ok: true, value: {} }
+746:   }
+747: 
+748:   if (typeof value === 'string') {
+749:     try {
+750:       return { ok: true, value: JSON.parse(value) }
+751:     } catch {
+752:       return {
+753:         ok: false,
+754:         error: {
+755:           code: 'TOOL_CALL_VALIDATION_ERROR',
+756:           message: `Tool call arguments for "${toolName}" must be valid JSON.`,
+757:           details: { toolName },
+758:         },
+759:       }
+760:     }
+761:   }
+762: 
+763:   return { ok: true, value }
+764: }
+765: 
+766: const buildExecutionPlans = (
+767:   toolCalls: ToolCall[],
+768:   toolMap: Map<string, AgentTool>,
+769: ): { ok: true; value: ToolExecutionPlan[] } | { ok: false; error: ExecutorError } => {
+770:   const plans: ToolExecutionPlan[] = []
+771: 
+772:   for (const call of toolCalls) {
+773:     const tool = toolMap.get(call.name)
+774:     if (!tool) {
+775:       return {
+776:         ok: false,
+777:         error: {
+778:           code: 'TOOL_PLAN_ERROR',
+779:           message: `Tool "${call.name}" is not registered for planning.`,
+780:           details: { toolName: call.name },
+781:         },
+782:       }
+783:     }
+784:     const plan = buildToolExecutionPlan(call, tool)
+785:     if (!plan.ok) {
+786:       return {
+787:         ok: false,
+788:         error: {
+789:           code: 'TOOL_PLAN_ERROR',
+790:           message: plan.error.message,
+791:           details: { toolName: call.name, planCode: plan.error.code },
+792:         },
+793:       }
+794:     }
+795:     plans.push(plan.value)
+796:   }
+797: 
+798:   return { ok: true, value: plans }
+799: }
+800: 
+801: const expectsObjectArguments = (schema: ToolDefinition['inputSchema']): boolean => {
+802:   if (!isRecord(schema)) {
+803:     return false
+804:   }
+805:   const type = typeof schema.type === 'string' ? schema.type : undefined
+806:   if (type === 'object') {
+807:     return true
+808:   }
+809:   return 'properties' in schema
+810: }
+811: 
+812: const isRecord = (value: unknown): value is Record<string, unknown> => {
+813:   return typeof value === 'object' && value !== null && !Array.isArray(value)
+814: }
+
+(End of file - total 814 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 3.9s)
+
+_Thinking:_
+
+**Checking event handlers**
+
+I'm looking into existing agent-events to understand how stream handlers are implemented before creating new ones.
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/shared/agent-events.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/shared/agent-events.ts</path>
+<type>file</type>
+<content>1: export type ThinkingEvent = {
+2:   event: 'thinking'
+3:   phase:
+4:     | 'llm_call_start'
+5:     | 'llm_call_end'
+6:     | 'tool_call_detected'
+7:     | 'tool_plan_built'
+8:     | 'tool_call_error'
+9:   callIndex: number
+10:   iteration: number
+11:   model: string
+12:   result?: 'final_text' | 'tool_calls' | 'error'
+13:   toolNames?: string[]
+14:   errorCode?: string
+15:   durationMs?: number
+16:   summary: string
+17: }
+18: 
+19: export type ToolSuccessEvent = {
+20:   event: 'tool_success'
+21:   toolName: string
+22:   toolCallId: string
+23:   durationMs: number
+24:   summary: string
+25:   iteration?: number
+26: }
+27: 
+28: export type ToolErrorEvent = {
+29:   event: 'tool_error'
+30:   toolName: string
+31:   toolCallId: string
+32:   durationMs: number
+33:   summary: string
+34:   errorMessage: string
+35:   errorCode?: string
+36:   iteration?: number
+37: }
+38: 
+39: export type AgentEvent = ThinkingEvent | ToolSuccessEvent | ToolErrorEvent
+
+(End of file - total 39 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 4.7s)
+
+_Thinking:_
+
+**Planning main index implementation**
+
+I'm considering adding logic in the main index.ts to create dependencies with executeExecutor and possibly using agent tools, pending a review and approval of available tools. Next, I'll search for relevant tool usage and approval details.
+
+**Tool: grep**
+
+**Input:**
+```json
+{
+  "pattern": "executeExecutor",
+  "path": "/Users/eroberts/Projects/Helm/src"
+}
+```
+
+**Output:**
+```
+Found 1 matches
+/Users/eroberts/Projects/Helm/src/main/agent/executor.ts:
+  Line 98: export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 33.8s)
+
+_Thinking:_
+
+**Planning executor integration and type alignment**
+
+I'm deciding to implement runExecutor and streamExecutor in the main index for simplicity while importing necessary dependencies like createAppRouter. Types differ across shared modules and executor.ts but are structurally compatible, so I'll map them carefully without using 'any'. For streamExecutor, I'll add timestamps and handle tool approval with autoApprove input to allow or deny tool executions.
+
+_Thinking:_
+
+**Finalizing executor handlers with event streaming and approval**
+
+I'm solidifying runExecutor and streamExecutor implementations in main index, adding typed event handlers that timestamp thinking and tool events. The tool approval logic denies by default unless autoApprove is true, returning reasons accordingly. I'll update appRouter to use createAppRouter with these executors and ensure type-safe input mapping without `any`, preparing a patch to apply these changes.
+
+**Tool: apply_patch**
+
+**Input:**
+```json
+{
+  "patchText": "*** Begin Patch\n*** Update File: /Users/eroberts/Projects/Helm/src/main/index.ts\n@@\n-import { createIPCHandler } from 'electron-trpc/main'\n-import { appRouter } from '../shared/trpc'\n-import type { AppRouter } from '../shared/trpc'\n+import { createIPCHandler } from 'electron-trpc/main'\n+import { createAppRouter } from '../shared/trpc'\n+import type { AppRouter, ExecutorRunInput, ExecutorStreamEvent } from '../shared/trpc'\n+import { executeExecutor, type ExecutorInput } from './agent/executor'\n@@\n-let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null\n+let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null\n+\n+const timestamp = (): string => new Date().toISOString()\n+\n+const createOnToolApproval = (autoApprove: boolean): ExecutorInput['onToolApproval'] => {\n+  return async ({ plan }) => {\n+    if (autoApprove) {\n+      return { approved: true }\n+    }\n+    return {\n+      approved: false,\n+      reason: `Tool \"${plan.toolName}\" requires approval and auto-approval is disabled.`,\n+    }\n+  }\n+}\n+\n+const runExecutor = async (input: ExecutorRunInput) => {\n+  const autoApprove = input.autoApprove === true\n+  return executeExecutor({\n+    systemPrompt: input.systemPrompt,\n+    userIntent: input.userIntent,\n+    model: input.model,\n+    maxIterations: input.maxIterations,\n+    onToolApproval: createOnToolApproval(autoApprove),\n+  })\n+}\n+\n+const streamExecutor = async (\n+  input: ExecutorRunInput,\n+  emit: (event: ExecutorStreamEvent) => void,\n+): Promise<void> => {\n+  const autoApprove = input.autoApprove === true\n+  const onThinkingEvent: ExecutorInput['onThinkingEvent'] = (event) => {\n+    emit({ ...event, timestamp: timestamp() })\n+  }\n+  const onToolEvent: ExecutorInput['onToolEvent'] = (event) => {\n+    emit({ ...event, timestamp: timestamp() })\n+  }\n+\n+  const result = await executeExecutor({\n+    systemPrompt: input.systemPrompt,\n+    userIntent: input.userIntent,\n+    model: input.model,\n+    maxIterations: input.maxIterations,\n+    onThinkingEvent,\n+    onToolEvent,\n+    onToolApproval: createOnToolApproval(autoApprove),\n+  })\n+\n+  emit({ event: 'executor.complete', timestamp: timestamp(), result })\n+}\n+\n+const appRouter = createAppRouter({\n+  runExecutor,\n+  streamExecutor,\n+})\n*** End Patch"
+}
+```
+
+**Output:**
+```
+Success. Updated the following files:
+M src/main/index.ts
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 8.9s)
+
+_Thinking:_
+
+**Verifying type usage consistency**
+
+Confirmed key types are properly used and imported without unused imports; createOnToolApproval correctly uses plan, and createIPCHandler integrates AppRouter type as intended. Next is to review read-web-page imports to ensure correct use of puppeteer-client.
+
+_Thinking:_
+
+**Reviewing read-web-page and search-web imports**
+
+Glancing at read-web-page and search-web files to verify imports and avoid potential issues before proceeding.
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/main/tools/read-web-page.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/main/tools/read-web-page.ts</path>
+<type>file</type>
+<content>1: import { JSDOM } from 'jsdom'
+2: import puppeteer from 'puppeteer-core'
+3: 
+4: import type { ResolvedScrapeConfig, ScrapeConfig } from '../config'
+5: import { resolveScrapeConfig } from '../config'
+6: import {
+7:   buildLaunchOptions,
+8:   type PuppeteerAdapter,
+9:   type PuppeteerBrowser,
+10:   type PuppeteerPage,
+11:   type PuppeteerWaitUntil,
+12: } from '../scrape/puppeteer-client'
+13: import { convertHtmlToMarkdown } from '../scrape/markdown'
+14: import { extractReadableArticle, type ReadableArticle } from '../scrape/readability'
+15: 
+16: export type ReadWebPageSuccess = {
+17:   ok: true
+18:   value: {
+19:     markdown: string
+20:     sourceUrl: string
+21:     title?: string
+22:   }
+23: }
+24: 
+25: export type ReadWebPageErrorCode =
+26:   | 'INVALID_URL'
+27:   | 'TIMEOUT'
+28:   | 'BLOCKED'
+29:   | 'NAVIGATION_FAILED'
+30:   | 'CONTENT_FAILED'
+31:   | 'EXTRACTION_FAILED'
+32:   | 'MARKDOWN_FAILED'
+33:   | 'UNKNOWN'
+34: 
+35: export type ReadWebPageError = {
+36:   ok: false
+37:   error: {
+38:     code: ReadWebPageErrorCode
+39:     message: string
+40:     details: {
+41:       url: string
+42:     }
+43:   }
+44: }
+45: 
+46: export type ReadWebPageResponse = ReadWebPageSuccess | ReadWebPageError
+47: 
+48: export type ReadWebPageOptions = {
+49:   config?: Partial<ScrapeConfig>
+50:   resolvedConfig?: ResolvedScrapeConfig
+51:   puppeteer?: PuppeteerAdapter
+52:   waitUntil?: PuppeteerWaitUntil
+53:   extractReadableArticle?: (html: string, url: string) => ReadableArticle | null
+54:   convertHtmlToMarkdown?: (html: string) => string
+55: }
+56: 
+57: type FallbackExtraction = {
+58:   title: string | null
+59:   contentHtml: string | null
+60:   textContent: string | null
+61:   blocked: boolean
+62: }
+63: 
+64: const BLOCKED_TERMS = [
+65:   'captcha',
+66:   'unusual traffic',
+67:   'verify you are human',
+68:   'not a robot',
+69:   'robot check',
+70:   'access denied',
+71:   'blocked',
+72:   'cloudflare',
+73: ]
+74: 
+75: const FALLBACK_SELECTORS = ['main', 'article', 'body']
+76: const STRIP_SELECTORS = ['script', 'style', 'noscript', 'template', 'iframe']
+77: 
+78: export const readWebPage = async (
+79:   url: string,
+80:   options?: ReadWebPageOptions,
+81: ): Promise<ReadWebPageResponse> => {
+82:   const trimmed = url.trim()
+83:   if (!trimmed) {
+84:     return buildError('INVALID_URL', 'URL must not be empty.', url)
+85:   }
+86: 
+87:   const parsed = parseHttpUrl(trimmed)
+88:   if (!parsed) {
+89:     return buildError('INVALID_URL', 'Invalid URL. Provide an http(s) URL.', trimmed)
+90:   }
+91: 
+92:   const baseConfig = options?.resolvedConfig ?? (await resolveScrapeConfig())
+93:   const config = mergeScrapeConfig(baseConfig, options?.config)
+94:   const puppeteerClient = options?.puppeteer ?? puppeteer
+95:   const launchOptions = buildLaunchOptions(config.puppeteer)
+96: 
+97:   let browser: PuppeteerBrowser | null = null
+98:   let page: PuppeteerPage | null = null
+99: 
+100:   try {
+101:     browser = await puppeteerClient.launch(launchOptions)
+102:     page = await browser.newPage()
+103:     await applyPageConfig(page, config)
+104: 
+105:     try {
+106:       await page.goto(parsed.toString(), { waitUntil: options?.waitUntil ?? 'domcontentloaded' })
+107:     } catch (error) {
+108:       return mapNavigationError(error, parsed.toString())
+109:     }
+110: 
+111:     const sourceUrl = resolveSourceUrl(page, parsed.toString())
+112: 
+113:     let html: string
+114:     try {
+115:       html = await page.content()
+116:     } catch (error) {
+117:       return mapContentError(error, parsed.toString())
+118:     }
+119: 
+120:     if (isBlockedHtml(html)) {
+121:       return buildError(
+122:         'BLOCKED',
+123:         'Page appears to block automated browsing. Try again later or use a different URL.',
+124:         parsed.toString(),
+125:       )
+126:     }
+127: 
+128:     const readableExtractor = options?.extractReadableArticle ?? extractReadableArticle
+129:     const article = readableExtractor(html, sourceUrl)
+130: 
+131:     const needsFallback = !article?.content || !article.content.trim() || !article.title
+132:     const fallback = needsFallback ? extractFallbackFromHtml(html, sourceUrl) : null
+133: 
+134:     if (fallback?.blocked) {
+135:       return buildError(
+136:         'BLOCKED',
+137:         'Page appears to block automated browsing. Try again later or use a different URL.',
+138:         parsed.toString(),
+139:       )
+140:     }
+141: 
+142:     const contentHtml = article?.content?.trim() || fallback?.contentHtml || null
+143:     const title = normalizeOptionalText(article?.title) ?? fallback?.title
+144:     const textContent = normalizeOptionalText(article?.textContent) ?? fallback?.textContent ?? null
+145: 
+146:     if (!contentHtml && !textContent) {
+147:       return buildError(
+148:         'EXTRACTION_FAILED',
+149:         'Failed to extract readable content from the page.',
+150:         parsed.toString(),
+151:       )
+152:     }
+153: 
+154:     const markdownConverter = options?.convertHtmlToMarkdown ?? convertHtmlToMarkdown
+155:     const markdown = buildMarkdown(contentHtml, textContent, markdownConverter)
+156:     if (!markdown) {
+157:       return buildError(
+158:         'MARKDOWN_FAILED',
+159:         'Failed to convert the page content to markdown.',
+160:         parsed.toString(),
+161:       )
+162:     }
+163: 
+164:     const value: ReadWebPageSuccess['value'] = {
+165:       markdown,
+166:       sourceUrl,
+167:     }
+168: 
+169:     if (title) {
+170:       value.title = title
+171:     }
+172: 
+173:     return { ok: true, value }
+174:   } catch (error) {
+175:     return mapUnknownError(error, parsed.toString())
+176:   } finally {
+177:     if (page) {
+178:       await safeClosePage(page)
+179:     }
+180:     if (browser) {
+181:       await safeCloseBrowser(browser)
+182:     }
+183:   }
+184: }
+185: 
+186: const mergeScrapeConfig = (
+187:   base: ResolvedScrapeConfig,
+188:   override?: Partial<ScrapeConfig>,
+189: ): ResolvedScrapeConfig => {
+190:   const puppeteerConfig = {
+191:     ...base.puppeteer,
+192:     ...(override?.puppeteer ?? {}),
+193:   }
+194: 
+195:   const resolved: ResolvedScrapeConfig = {
+196:     outputDir: base.outputDir,
+197:     outputFormat: base.outputFormat,
+198:     puppeteer: puppeteerConfig,
+199:   }
+200: 
+201:   if (override?.outputDir !== undefined) {
+202:     if (override.outputDir) {
+203:       resolved.outputDir = override.outputDir
+204:     }
+205:   }
+206: 
+207:   if (override?.outputFormat !== undefined) {
+208:     resolved.outputFormat = override.outputFormat
+209:   }
+210: 
+211:   return resolved
+212: }
+213: 
+214: const applyPageConfig = async (
+215:   page: PuppeteerPage,
+216:   config: ResolvedScrapeConfig,
+217: ): Promise<void> => {
+218:   if (config.puppeteer.userAgent) {
+219:     await page.setUserAgent(config.puppeteer.userAgent)
+220:   }
+221: 
+222:   if (config.puppeteer.navigationTimeoutMs !== undefined) {
+223:     page.setDefaultNavigationTimeout(config.puppeteer.navigationTimeoutMs)
+224:   }
+225: 
+226:   if (config.puppeteer.operationTimeoutMs !== undefined) {
+227:     page.setDefaultTimeout(config.puppeteer.operationTimeoutMs)
+228:   }
+229: }
+230: 
+231: const parseHttpUrl = (value: string): URL | null => {
+232:   try {
+233:     const parsed = new URL(value)
+234:     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+235:       return null
+236:     }
+237:     return parsed
+238:   } catch {
+239:     return null
+240:   }
+241: }
+242: 
+243: const resolveSourceUrl = (page: PuppeteerPage, fallback: string): string => {
+244:   try {
+245:     const current = page.url().trim()
+246:     if (!current) {
+247:       return fallback
+248:     }
+249:     const parsed = parseHttpUrl(current)
+250:     return parsed ? parsed.toString() : fallback
+251:   } catch {
+252:     return fallback
+253:   }
+254: }
+255: 
+256: const extractFallbackFromHtml = (html: string, url: string): FallbackExtraction => {
+257:   const dom = new JSDOM(html, { url })
+258: 
+259:   try {
+260:     const document = dom.window.document
+261:     const bodyText = document.body?.textContent ?? ''
+262:     const blocked = isBlockedText(bodyText)
+263: 
+264:     for (const selector of STRIP_SELECTORS) {
+265:       for (const node of Array.from(document.querySelectorAll(selector))) {
+266:         node.remove()
+267:       }
+268:     }
+269: 
+270:     const contentRoot = findFallbackRoot(document)
+271:     const contentHtml = normalizeOptionalHtml(contentRoot?.innerHTML ?? '')
+272:     const textContent = normalizeOptionalText(
+273:       contentRoot?.textContent ?? document.body?.textContent ?? '',
+274:     )
+275: 
+276:     return {
+277:       title: normalizeOptionalText(document.title),
+278:       contentHtml,
+279:       textContent,
+280:       blocked,
+281:     }
+282:   } finally {
+283:     dom.window.close()
+284:   }
+285: }
+286: 
+287: const findFallbackRoot = (document: Document): Element | null => {
+288:   for (const selector of FALLBACK_SELECTORS) {
+289:     const node = document.querySelector(selector)
+290:     if (!node) {
+291:       continue
+292:     }
+293:     if (normalizeOptionalText(node.textContent ?? '')) {
+294:       return node
+295:     }
+296:   }
+297: 
+298:   return document.body
+299: }
+300: 
+301: const buildMarkdown = (
+302:   html: string | null,
+303:   fallbackText: string | null,
+304:   convert: (input: string) => string,
+305: ): string | null => {
+306:   if (html) {
+307:     try {
+308:       const markdown = normalizeOptionalMarkdown(convert(html))
+309:       if (markdown) {
+310:         return markdown
+311:       }
+312:     } catch {
+313:       // Fall back to text below.
+314:     }
+315:   }
+316: 
+317:   if (fallbackText) {
+318:     const normalized = normalizeOptionalText(fallbackText)
+319:     if (normalized) {
+320:       return normalized
+321:     }
+322:   }
+323: 
+324:   return null
+325: }
+326: 
+327: const buildError = (code: ReadWebPageErrorCode, message: string, url: string): ReadWebPageError => {
+328:   return {
+329:     ok: false,
+330:     error: {
+331:       code,
+332:       message,
+333:       details: { url },
+334:     },
+335:   }
+336: }
+337: 
+338: const isBlockedHtml = (html: string): boolean => {
+339:   const normalized = normalizeForMatch(html.replace(/<[^>]+>/g, ' '))
+340:   return BLOCKED_TERMS.some((term) => normalized.includes(term))
+341: }
+342: 
+343: const isBlockedText = (value: string): boolean => {
+344:   const normalized = normalizeForMatch(value)
+345:   return BLOCKED_TERMS.some((term) => normalized.includes(term))
+346: }
+347: 
+348: const normalizeOptionalHtml = (value?: string | null): string | null => {
+349:   const normalized = value?.replace(/\r/g, '').trim()
+350:   return normalized && normalized.length > 0 ? normalized : null
+351: }
+352: 
+353: const normalizeOptionalMarkdown = (value?: string | null): string | null => {
+354:   const normalized = value?.replace(/\r/g, '').trim()
+355:   return normalized && normalized.length > 0 ? normalized : null
+356: }
+357: 
+358: const normalizeOptionalText = (value?: string | null): string | null => {
+359:   if (!value) {
+360:     return null
+361:   }
+362: 
+363:   const normalized = value
+364:     .replace(/\r/g, '')
+365:     .replace(/[ \t]+\n/g, '\n')
+366:     .replace(/\n{3,}/g, '\n\n')
+367:     .replace(/[ \t]{2,}/g, ' ')
+368:     .trim()
+369:   return normalized && normalized.length > 0 ? normalized : null
+370: }
+371: 
+372: const normalizeForMatch = (value: string): string => {
+373:   const normalized = normalizeOptionalText(value)
+374:   return normalized ? normalized.replace(/\s+/g, ' ').toLowerCase() : ''
+375: }
+376: 
+377: const isTimeoutError = (error: unknown): boolean => {
+378:   if (error instanceof Error) {
+379:     if (error.name === 'TimeoutError') {
+380:       return true
+381:     }
+382:     return /timeout/i.test(error.message)
+383:   }
+384:   return false
+385: }
+386: 
+387: const mapNavigationError = (error: unknown, url: string): ReadWebPageError => {
+388:   if (isTimeoutError(error)) {
+389:     return buildError('TIMEOUT', 'Timed out navigating to the page.', url)
+390:   }
+391: 
+392:   const message = error instanceof Error ? error.message : 'Navigation failed.'
+393:   return buildError('NAVIGATION_FAILED', message, url)
+394: }
+395: 
+396: const mapContentError = (error: unknown, url: string): ReadWebPageError => {
+397:   if (isTimeoutError(error)) {
+398:     return buildError('TIMEOUT', 'Timed out retrieving page content.', url)
+399:   }
+400: 
+401:   const message = error instanceof Error ? error.message : 'Failed to capture page content.'
+402:   return buildError('CONTENT_FAILED', message, url)
+403: }
+404: 
+405: const mapUnknownError = (error: unknown, url: string): ReadWebPageError => {
+406:   const message = error instanceof Error ? error.message : 'Unknown error.'
+407:   return buildError('UNKNOWN', message, url)
+408: }
+409: 
+410: const safeClosePage = async (page: PuppeteerPage): Promise<void> => {
+411:   try {
+412:     await page.close()
+413:   } catch {
+414:     // Ignore close errors.
+415:   }
+416: }
+417: 
+418: const safeCloseBrowser = async (browser: PuppeteerBrowser): Promise<void> => {
+419:   try {
+420:     await browser.close()
+421:   } catch {
+422:     // Ignore close errors.
+423:   }
+424: }
+
+(End of file - total 424 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 3.5s)
+
+_Thinking:_
+
+**Reviewing Puppeteer import usage**
+
+This file still imports `puppeteer-core` directly while using `buildLaunchOptions` from `puppeteer-client`; this might be acceptable since it requires core functions, though considering switching to an adapter could improve consistency. Next, I'll check how `search-web` handles this.
+
+**Tool: read**
+
+**Input:**
+```json
+{
+  "filePath": "/Users/eroberts/Projects/Helm/src/main/tools/search-web.ts"
+}
+```
+
+**Output:**
+```
+<path>/Users/eroberts/Projects/Helm/src/main/tools/search-web.ts</path>
+<type>file</type>
+<content>1: import { JSDOM } from 'jsdom'
+2: import puppeteer from 'puppeteer-core'
+3: 
+4: import type { ResolvedSearchWebConfig, SearchWebConfig } from '../config'
+5: import { resolveSearchWebConfig } from '../config'
+6: import {
+7:   buildLaunchOptions,
+8:   type PuppeteerAdapter,
+9:   type PuppeteerBrowser,
+10:   type PuppeteerPage,
+11:   type PuppeteerWaitUntil,
+12: } from '../scrape/puppeteer-client'
+13: 
+14: export type SearchWebResultItem = {
+15:   title: string
+16:   url: string
+17:   snippet: string
+18: }
+19: 
+20: export type SearchWebSuccess = {
+21:   ok: true
+22:   value: {
+23:     engine: 'duckduckgo_html'
+24:     query: string
+25:     results: SearchWebResultItem[]
+26:     meta: {
+27:       limit: number
+28:       elapsedMs: number
+29:     }
+30:   }
+31: }
+32: 
+33: export type SearchWebErrorCode =
+34:   | 'TIMEOUT'
+35:   | 'NO_RESULTS'
+36:   | 'BLOCKED'
+37:   | 'NAVIGATION_FAILED'
+38:   | 'UNKNOWN'
+39: 
+40: export type SearchWebError = {
+41:   ok: false
+42:   error: {
+43:     code: SearchWebErrorCode
+44:     message: string
+45:     details: {
+46:       query: string
+47:     }
+48:   }
+49: }
+50: 
+51: export type SearchWebResponse = SearchWebSuccess | SearchWebError
+52: 
+53: export type SearchWebOptions = {
+54:   config?: Partial<SearchWebConfig>
+55:   resolvedConfig?: ResolvedSearchWebConfig
+56:   puppeteer?: PuppeteerAdapter
+57:   waitUntil?: PuppeteerWaitUntil
+58:   now?: () => number
+59: }
+60: 
+61: const DUCKDUCKGO_ENGINE = 'duckduckgo_html'
+62: const DUCKDUCKGO_SEARCH_URL = 'https://html.duckduckgo.com/html/?q='
+63: const RESULT_SELECTOR = '.results .result, .result'
+64: const RESULT_LINK_SELECTOR = 'a.result__a, a.result__url'
+65: const RESULT_SNIPPET_SELECTOR = '.result__snippet, .result__snippetjs, a.result__snippet'
+66: const BLOCKED_TERMS = ['captcha', 'unusual traffic', 'verify you are human', 'robot']
+67: const NO_RESULTS_TERMS = ['no results', 'no result', 'no matches', 'no search results']
+68: 
+69: export const searchWeb = async (
+70:   query: string,
+71:   options?: SearchWebOptions,
+72: ): Promise<SearchWebResponse> => {
+73:   const trimmed = query.trim()
+74:   if (!trimmed) {
+75:     return buildError('UNKNOWN', 'Query must not be empty.', query)
+76:   }
+77: 
+78:   const now = options?.now ?? Date.now
+79:   const startedAt = now()
+80:   const baseConfig = options?.resolvedConfig ?? (await resolveSearchWebConfig())
+81:   const config = mergeSearchWebConfig(baseConfig, options?.config)
+82:   const targetUrl = `${DUCKDUCKGO_SEARCH_URL}${encodeURIComponent(trimmed)}`
+83: 
+84:   const puppeteerClient = options?.puppeteer ?? puppeteer
+85:   const launchOptions = buildLaunchOptions(config.puppeteer)
+86:   const launchArgs = [...(launchOptions.args ?? [])]
+87:   if (config.proxy) {
+88:     launchArgs.push(`--proxy-server=${config.proxy}`)
+89:   }
+90:   if (launchArgs.length > 0) {
+91:     launchOptions.args = launchArgs
+92:   }
+93: 
+94:   let browser: PuppeteerBrowser | null = null
+95: 
+96:   try {
+97:     browser = await puppeteerClient.launch(launchOptions)
+98:     const page = await browser.newPage()
+99:     await applyPageConfig(page, config)
+100: 
+101:     try {
+102:       await page.goto(targetUrl, { waitUntil: options?.waitUntil ?? 'domcontentloaded' })
+103:     } catch (error) {
+104:       return mapNavigationError(error, trimmed)
+105:     }
+106: 
+107:     const selectorResult = await waitForResults(page, config, trimmed)
+108:     if (!selectorResult.ok) {
+109:       return selectorResult.response
+110:     }
+111: 
+112:     const html = await page.content()
+113:     const parsed = parseDuckDuckGoHtml(html, config.resultsLimit)
+114: 
+115:     if (parsed.blocked) {
+116:       return buildError('BLOCKED', 'DuckDuckGo blocked the request.', trimmed)
+117:     }
+118: 
+119:     if (parsed.results.length === 0) {
+120:       return buildError('NO_RESULTS', 'No results found.', trimmed)
+121:     }
+122: 
+123:     return {
+124:       ok: true,
+125:       value: {
+126:         engine: DUCKDUCKGO_ENGINE,
+127:         query: trimmed,
+128:         results: parsed.results,
+129:         meta: {
+130:           limit: config.resultsLimit,
+131:           elapsedMs: Math.max(0, now() - startedAt),
+132:         },
+133:       },
+134:     }
+135:   } catch (error) {
+136:     return mapUnknownError(error, trimmed)
+137:   } finally {
+138:     if (browser) {
+139:       await safeClose(browser)
+140:     }
+141:   }
+142: }
+143: 
+144: const mergeSearchWebConfig = (
+145:   base: ResolvedSearchWebConfig,
+146:   override?: Partial<SearchWebConfig>,
+147: ): ResolvedSearchWebConfig => {
+148:   const puppeteerConfig = {
+149:     ...base.puppeteer,
+150:     ...(override?.puppeteer ?? {}),
+151:   }
+152: 
+153:   const resolved: ResolvedSearchWebConfig = {
+154:     resultsLimit: resolveResultsLimit(override?.resultsLimit ?? base.resultsLimit),
+155:     puppeteer: puppeteerConfig,
+156:   }
+157: 
+158:   if (override?.proxy !== undefined) {
+159:     if (override.proxy) {
+160:       resolved.proxy = override.proxy
+161:     }
+162:   } else if (base.proxy) {
+163:     resolved.proxy = base.proxy
+164:   }
+165: 
+166:   if (override?.outputDir !== undefined) {
+167:     if (override.outputDir) {
+168:       resolved.outputDir = override.outputDir
+169:     }
+170:   } else if (base.outputDir) {
+171:     resolved.outputDir = base.outputDir
+172:   }
+173: 
+174:   return resolved
+175: }
+176: 
+177: const resolveResultsLimit = (value: number): number => {
+178:   if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+179:     throw new Error('searchWeb.resultsLimit must be a positive integer.')
+180:   }
+181:   return value
+182: }
+183: 
+184: const applyPageConfig = async (
+185:   page: PuppeteerPage,
+186:   config: ResolvedSearchWebConfig,
+187: ): Promise<void> => {
+188:   if (config.puppeteer.userAgent) {
+189:     await page.setUserAgent(config.puppeteer.userAgent)
+190:   }
+191: 
+192:   if (config.puppeteer.navigationTimeoutMs !== undefined) {
+193:     page.setDefaultNavigationTimeout(config.puppeteer.navigationTimeoutMs)
+194:   }
+195: 
+196:   if (config.puppeteer.operationTimeoutMs !== undefined) {
+197:     page.setDefaultTimeout(config.puppeteer.operationTimeoutMs)
+198:   }
+199: }
+200: 
+201: const waitForResults = async (
+202:   page: PuppeteerPage,
+203:   config: ResolvedSearchWebConfig,
+204:   query: string,
+205: ): Promise<{ ok: true } | { ok: false; response: SearchWebError }> => {
+206:   try {
+207:     const timeout = config.puppeteer.navigationTimeoutMs
+208:     const waitOptions = timeout !== undefined ? { timeout } : undefined
+209:     await page.waitForSelector(RESULT_SELECTOR, waitOptions)
+210:     return { ok: true }
+211:   } catch (error) {
+212:     const html = await safePageContent(page)
+213:     if (html) {
+214:       const parsed = parseDuckDuckGoHtml(html, config.resultsLimit)
+215:       if (parsed.blocked) {
+216:         return {
+217:           ok: false,
+218:           response: buildError('BLOCKED', 'DuckDuckGo blocked the request.', query),
+219:         }
+220:       }
+221:       if (parsed.noResults) {
+222:         return { ok: false, response: buildError('NO_RESULTS', 'No results found.', query) }
+223:       }
+224:     }
+225: 
+226:     if (isTimeoutError(error)) {
+227:       return {
+228:         ok: false,
+229:         response: buildError('TIMEOUT', 'Timed out waiting for search results.', query),
+230:       }
+231:     }
+232: 
+233:     return {
+234:       ok: false,
+235:       response: buildError('NAVIGATION_FAILED', 'Failed to load search results.', query),
+236:     }
+237:   }
+238: }
+239: 
+240: const safePageContent = async (page: PuppeteerPage): Promise<string | null> => {
+241:   try {
+242:     return await page.content()
+243:   } catch {
+244:     return null
+245:   }
+246: }
+247: 
+248: const parseDuckDuckGoHtml = (
+249:   html: string,
+250:   limit: number,
+251: ): { results: SearchWebResultItem[]; blocked: boolean; noResults: boolean } => {
+252:   const dom = new JSDOM(html)
+253: 
+254:   try {
+255:     const document = dom.window.document
+256: 
+257:     const bodyText = document.body?.textContent ?? ''
+258:     const normalizedText = normalizeForMatch(bodyText)
+259:     const blocked = BLOCKED_TERMS.some((term) => normalizedText.includes(term))
+260:     const noResults =
+261:       NO_RESULTS_TERMS.some((term) => normalizedText.includes(term)) ||
+262:       Boolean(document.querySelector('.no-results, #no_results'))
+263: 
+264:     const resultNodes = Array.from(document.querySelectorAll(RESULT_SELECTOR))
+265:     const results: SearchWebResultItem[] = []
+266: 
+267:     for (const node of resultNodes) {
+268:       const item = extractResult(node)
+269:       if (!item) {
+270:         continue
+271:       }
+272:       results.push(item)
+273:       if (results.length >= limit) {
+274:         break
+275:       }
+276:     }
+277: 
+278:     return { results, blocked, noResults }
+279:   } finally {
+280:     dom.window.close()
+281:   }
+282: }
+283: 
+284: const extractResult = (node: Element): SearchWebResultItem | null => {
+285:   const link = node.querySelector(RESULT_LINK_SELECTOR)
+286:   const title = normalizeTextContent(link?.textContent ?? '')
+287:   const href = link?.getAttribute('href') ?? ''
+288:   const url = normalizeResultUrl(href)
+289: 
+290:   if (!title || !url) {
+291:     return null
+292:   }
+293: 
+294:   const snippet = normalizeTextContent(
+295:     node.querySelector(RESULT_SNIPPET_SELECTOR)?.textContent ?? '',
+296:   )
+297: 
+298:   return { title, url, snippet }
+299: }
+300: 
+301: const normalizeResultUrl = (href: string): string | null => {
+302:   const trimmed = href.trim()
+303:   if (!trimmed) {
+304:     return null
+305:   }
+306: 
+307:   let parsed: URL
+308:   try {
+309:     parsed = new URL(trimmed, 'https://duckduckgo.com')
+310:   } catch {
+311:     return null
+312:   }
+313: 
+314:   if (parsed.hostname.endsWith('duckduckgo.com') && parsed.pathname === '/l/') {
+315:     const uddg = parsed.searchParams.get('uddg')
+316:     if (!uddg) {
+317:       return null
+318:     }
+319:     try {
+320:       parsed = new URL(decodeURIComponent(uddg))
+321:     } catch {
+322:       return null
+323:     }
+324:   }
+325: 
+326:   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+327:     return null
+328:   }
+329: 
+330:   return parsed.toString()
+331: }
+332: 
+333: const normalizeTextContent = (value: string): string => {
+334:   return value.replace(/\s+/g, ' ').trim()
+335: }
+336: 
+337: const normalizeForMatch = (value: string): string => {
+338:   return normalizeTextContent(value).toLowerCase()
+339: }
+340: 
+341: const buildError = (code: SearchWebErrorCode, message: string, query: string): SearchWebError => {
+342:   return {
+343:     ok: false,
+344:     error: {
+345:       code,
+346:       message,
+347:       details: { query },
+348:     },
+349:   }
+350: }
+351: 
+352: const isTimeoutError = (error: unknown): boolean => {
+353:   if (error instanceof Error) {
+354:     if (error.name === 'TimeoutError') {
+355:       return true
+356:     }
+357:     return /timeout/i.test(error.message)
+358:   }
+359:   return false
+360: }
+361: 
+362: const mapNavigationError = (error: unknown, query: string): SearchWebError => {
+363:   if (isTimeoutError(error)) {
+364:     return buildError('TIMEOUT', 'Timed out navigating to DuckDuckGo.', query)
+365:   }
+366: 
+367:   const message = error instanceof Error ? error.message : 'Navigation failed.'
+368:   return buildError('NAVIGATION_FAILED', message, query)
+369: }
+370: 
+371: const mapUnknownError = (error: unknown, query: string): SearchWebError => {
+372:   const message = error instanceof Error ? error.message : 'Unknown error.'
+373:   return buildError('UNKNOWN', message, query)
+374: }
+375: 
+376: const safeClose = async (browser: PuppeteerBrowser): Promise<void> => {
+377:   try {
+378:     await browser.close()
+379:   } catch {
+380:     // Ignore close errors.
+381:   }
+382: }
+
+(End of file - total 382 lines)
+</content>
+```
+
+---
+
+## Assistant (Build · gpt-5.2-codex · 8.1s)
+
+_Thinking:_
+
+**Summarizing progress and next steps**
+
+The router connection is complete, and `preload/index.ts` has necessary context isolation and sandbox settings confirmed. No ESLint or compilation issues found. The next step is to verify executor stream events from tRPC in milestone 3, likely by updating the renderer or running dev mode, but no tests have been run yet and no UI implementation is requested now. I'll highlight these points and suggest running or extending renderer tests as future work.
+
+Hooked the executor into the main tRPC router with run/stream dependencies, plus auto-approval handling and timestamped event emission. The main process now builds the app router via `createAppRouter` and streams `thinking/tool_*` events and a final `executor.complete` event through the subscription.
+
+Details
+- Added executor wiring + event emission in `src/main/index.ts`.
+- Auto-approval is gated by `autoApprove`; dangerous tools are denied with a clear reason when disabled.
+
+Next steps
+1. Smoke test the bridge by calling `executorStream` from the renderer and confirming you receive `thinking`, `tool_*`, and `executor.complete` events.
+2. Run `npm run dev` to ensure the main process compiles cleanly with the new imports.
+
+Files changed
+- `src/main/index.ts`
+
+Tests
+- Not run.
 
 ---
 
@@ -6506,503 +8808,6 @@ Wrapped `ReactMarkdown` in a container div so styling applies and the component 
 
 File updated
 - `src/renderer/src/components/MessageBubble.tsx`
-
-Tests not run.
-
----
-
-## User
-
-The previous fix was not quite enough. The executor is still looping and hitting MAX_ITERATIONS_EXCEEDED.
- Here is what is happening: When the agent outputs its final response with a code block (like a python script), the code often contains words like function. This bypasses our guard clause. The parser then tries to parse the python code as JSON, fails, and throws an INVALID_JSON error back to the LLM. The LLM apologizes, rewrites the code, gets the error again, and loops infinitely.
- To permanently fix this, we need to make the fallback text parser strictly passive. It should never throw an INVALID_JSON error. If it can't parse a code block as a valid tool call, it should just return null so the executor knows it's regular text and successfully completes the run.
- Please update src/main/agent/tool-call-parser.ts to replace parseToolCallsFromContent with the following completely safe version. You can also delete the looksLikeToolCall function entirely as it is no longer needed:
- export const parseToolCallsFromContent = (content: string): ToolCallParseResult | null = {
-   const trimmed = content.trim()
-   if (!trimmed) {
-     return null
-   }
- 
- 
- const fenced = extractFencedJson(trimmed)
- if (fenced) {
- const parsed = safeParseJson(fenced)
- if (parsed.ok) {
- const container = parseToolCallContainer(parsed.value, 'content_json')
- if (container) {
- return container
- }
- }
- }
- 
- const candidate = extractJsonCandidate(trimmed)
- if (candidate) {
- const parsedCandidate = safeParseJson(candidate)
- if (parsedCandidate.ok) {
- const container = parseToolCallContainer(parsedCandidate.value, 'content_text')
- if (container) {
- return container
- }
- }
- }
- 
- return null
- }
- 
- Apply this replacement and remove `looksLikeToolCall` so there are no unused variables." 
-
----
-
-## Assistant (Build · gpt-5.2-codex · 4.7s)
-
-_Thinking:_
-
-**Planning patch to remove helper and update parsing**
-
-I'm preparing to remove the looksLikeToolCall function and update parseToolCallsFromContent to no longer use it, ensuring syntax correctness and covering all references by searching the codebase first.
-
-**Tool: grep**
-
-**Input:**
-```json
-{
-  "pattern": "looksLikeToolCall",
-  "path": "/Users/eroberts/Projects/Helm/src/main/agent/tool-call-parser.ts"
-}
-```
-
-**Output:**
-```
-Found 6 matches
-/Users/eroberts/Projects/Helm/src/main/agent/tool-call-parser.ts:
-  Line 44:   if (!looksLikeToolCall(trimmed)) {
-  Line 56:     } else if (looksLikeToolCall(fenced)) {
-  Line 71:     if (looksLikeToolCall(trimmed)) {
-  Line 119:   if (!looksLikeToolCallRecord(record)) {
-  Line 252: const looksLikeToolCallRecord = (record: Record<string, unknown>): boolean => {
-  Line 334: const looksLikeToolCall = (text: string): boolean => {
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 12.0s)
-
-_Thinking:_
-
-**Removing deprecated tool call checks**
-
-I'm removing the guard clause and all uses of the old tool call detection, deleting the looksLikeToolCall function and replacing parseToolCallsFromContent with its updated version. The looksLikeToolCallRecord remains for now.
-
-**Tool: apply_patch**
-
-**Input:**
-```json
-{
-  "patchText": "*** Begin Patch\n*** Update File: /Users/eroberts/Projects/Helm/src/main/agent/tool-call-parser.ts\n@@\n export const parseToolCallsFromContent = (content: string): ToolCallParseResult | null => {\n   const trimmed = content.trim()\n   if (!trimmed) {\n     return null\n   }\n-\n-  if (!looksLikeToolCall(trimmed)) {\n-    return null\n-  }\n-\n-  const fenced = extractFencedJson(trimmed)\n-  if (fenced) {\n-    const parsed = safeParseJson(fenced)\n-    if (parsed.ok) {\n-      const container = parseToolCallContainer(parsed.value, 'content_json')\n-      if (container) {\n-        return container\n-      }\n-    } else if (looksLikeToolCall(fenced)) {\n-      return {\n-        ok: false,\n-        error: { code: 'INVALID_JSON', message: 'Tool call JSON is invalid.' },\n-      }\n-    }\n-  }\n-\n-  const candidate = extractJsonCandidate(trimmed)\n-  if (!candidate) {\n-    return null\n-  }\n-\n-  const parsed = safeParseJson(candidate)\n-  if (!parsed.ok) {\n-    if (looksLikeToolCall(trimmed)) {\n-      return {\n-        ok: false,\n-        error: { code: 'INVALID_JSON', message: 'Tool call JSON is invalid.' },\n-      }\n-    }\n-    return null\n-  }\n-\n-  return parseToolCallContainer(parsed.value, 'content_text')\n+\n+  const fenced = extractFencedJson(trimmed)\n+  if (fenced) {\n+    const parsed = safeParseJson(fenced)\n+    if (parsed.ok) {\n+      const container = parseToolCallContainer(parsed.value, 'content_json')\n+      if (container) {\n+        return container\n+      }\n+    }\n+  }\n+\n+  const candidate = extractJsonCandidate(trimmed)\n+  if (candidate) {\n+    const parsedCandidate = safeParseJson(candidate)\n+    if (parsedCandidate.ok) {\n+      const container = parseToolCallContainer(parsedCandidate.value, 'content_text')\n+      if (container) {\n+        return container\n+      }\n+    }\n+  }\n+\n+  return null\n }\n@@\n-const looksLikeToolCall = (text: string): boolean => {\n-  return /\"tool\"|\"toolCalls\"|\"tool_calls\"|\"toolName\"|\"function\"/i.test(text)\n-}\n-\n const getArray = (record: Record<string, unknown>, keys: string[]): unknown[] | null => {\n*** End Patch"
-}
-```
-
-**Output:**
-```
-Success. Updated the following files:
-M src/main/agent/tool-call-parser.ts
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 3.0s)
-
-_Thinking:_
-
-**Verifying removal of obsolete references**
-
-I'm running a grep search to confirm all instances of the obsolete "looksLikeToolCall" references have been removed for safety.
-
-**Tool: grep**
-
-**Input:**
-```json
-{
-  "pattern": "looksLikeToolCall",
-  "path": "/Users/eroberts/Projects/Helm/src/main/agent/tool-call-parser.ts"
-}
-```
-
-**Output:**
-```
-Found 2 matches
-/Users/eroberts/Projects/Helm/src/main/agent/tool-call-parser.ts:
-  Line 105:   if (!looksLikeToolCallRecord(record)) {
-  Line 238: const looksLikeToolCallRecord = (record: Record<string, unknown>): boolean => {
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 5.4s)
-
-_Thinking:_
-
-**Finalizing summary output**
-
-Replaced `parseToolCallsFromContent` with a fully passive parser that never throws `INVALID_JSON`, and removed `looksLikeToolCall` entirely. The parser now only returns a tool-call container when it can successfully parse and validate one; otherwise it returns `null` so the executor can treat the response as final text.
-
-File updated
-- `src/main/agent/tool-call-parser.ts`
-
-Tests not run.
-
----
-
-## User
-
-I am getting a MALFORMED_FUNCTION_CALL error from Gemini. The timeline shows the agent successfully executing a tool, but then repeating the exact same tool call in the next iteration before eventually crashing.
- This is happening because the Gemini API expects functionResponse.response to be a native JSON object, but we are sending it an escaped JSON string. Gemini can't read the escaped string, assumes the tool failed, and loops until it hallucinates a bad tool call.
- Please update src/main/core/lib/llm/providers/gemini.ts.
- Find the buildGeminiToolResponsePayload function and replace it with this version that parses the JSON string into an actual object before sending it to the API:
- const buildGeminiToolResponsePayload = (
-   content: Message['content'],
-   toolCallId: string,
- ): Record<string, unknown = {
-   const textContent = serializeGeminiToolResponseContent(content)
-   
-   try {
-     const parsed = JSON.parse(textContent)
-     // If it's a valid JSON object, return it natively so Gemini can read it
-     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-       return parsed as Record<string, unknown
-     }
-   } catch {
-     // Fall through if it's just raw text
-   }
- 
- 
- // Fallback for non-JSON or array responses
- return { result: textContent }
- }
- 
- Please apply this patch. This will give Gemini the native object it expects (e.g., `{"ok": true, "bytes": 19}`) so it knows the tool succeeded and stops looping. 
-
----
-
-## Assistant (Build · gpt-5.2-codex · 5.4s)
-
-_Thinking:_
-
-**Correcting JSON parsing and typing**
-
-I'm updating the function to parse JSON safely, returning the parsed object only if it's an object (not an array), else fallback to a wrapper object with the raw text; I'll replace 'any' with `Record<string, unknown>` for proper typing and ensure the function's return structure, including `toolCallId`, stays consistent per existing code.
-
-**Tool: read**
-
-**Input:**
-```json
-{
-  "filePath": "/Users/eroberts/Projects/Helm/src/main/core/lib/llm/providers/gemini.ts",
-  "offset": 300,
-  "limit": 120
-}
-```
-
-**Output:**
-```
-<path>/Users/eroberts/Projects/Helm/src/main/core/lib/llm/providers/gemini.ts</path>
-<type>file</type>
-<content>300:           functionResponse: {
-301:             name: toolName,
-302:             response: buildGeminiToolResponsePayload(message.content, toolCallId),
-303:           },
-304:         },
-305:       ],
-306:     }
-307:   }
-308: 
-309:   const role = message.role === 'user' ? 'user' : 'model'
-310:   const parts = toGeminiParts(message.content)
-311:   if (parts.length === 0) {
-312:     parts.push({ text: '' })
-313:   }
-314:   return {
-315:     role,
-316:     parts,
-317:   }
-318: }
-319: 
-320: const buildGeminiToolResponsePayload = (
-321:   content: Message['content'],
-322:   toolCallId: string,
-323: ): Record<string, unknown> => {
-324:   return {
-325:     toolCallId,
-326:     content: serializeGeminiToolResponseContent(content),
-327:   }
-328: }
-329: 
-330: const serializeGeminiToolResponseContent = (content: Message['content']): string => {
-331:   if (typeof content === 'string') {
-332:     return content
-333:   }
-334: 
-335:   return content.map((part) => (part.type === 'text' ? part.text : '')).join('')
-336: }
-337: 
-338: const resolveToolCallIdForToolMessage = (message: Message): string => {
-339:   const toolCallId = coerceNonEmptyString(message.toolCallId ?? message.tool_call_id)
-340:   if (!toolCallId) {
-341:     throw new Error('Tool messages require toolCallId for tool call correlation.')
-342:   }
-343: 
-344:   return toolCallId
-345: }
-346: 
-347: const resolveGeminiToolNameForToolCall = (
-348:   toolCallId: string,
-349:   toolCallNameById: Map<string, string>,
-350: ): string => {
-351:   const mapped = toolCallNameById.get(toolCallId)
-352:   if (mapped) {
-353:     return mapped
-354:   }
-355: 
-356:   const parsed = parseGeminiToolNameFromCallId(toolCallId)
-357:   if (parsed) {
-358:     return parsed
-359:   }
-360: 
-361:   throw new Error(
-362:     `Gemini tool messages require a tool name for toolCallId "${toolCallId}". ` +
-363:       'Provide matching toolCalls or use gemini_<name>_<index> ids.',
-364:   )
-365: }
-366: 
-367: const parseGeminiToolNameFromCallId = (toolCallId: string): string | null => {
-368:   const prefix = 'gemini_'
-369:   if (!toolCallId.startsWith(prefix)) {
-370:     return null
-371:   }
-372: 
-373:   const withoutPrefix = toolCallId.slice(prefix.length)
-374:   const lastUnderscore = withoutPrefix.lastIndexOf('_')
-375:   if (lastUnderscore <= 0) {
-376:     return null
-377:   }
-378: 
-379:   return withoutPrefix.slice(0, lastUnderscore)
-380: }
-381: 
-382: const buildToolCallNameLookup = (messages: Message[]): Map<string, string> => {
-383:   const mapping = new Map<string, string>()
-384: 
-385:   for (const message of messages) {
-386:     const toolCalls = message.toolCalls ?? message.tool_calls
-387:     if (!toolCalls) {
-388:       continue
-389:     }
-390:     toolCalls.forEach((call, index) => {
-391:       const name = resolveToolCallRequestName(call)
-392:       const id = resolveToolCallRequestId(call, index)
-393:       if (name && id) {
-394:         mapping.set(id, name)
-395:       }
-396:     })
-397:   }
-398: 
-399:   return mapping
-400: }
-401: 
-402: const resolveToolCallRequestName = (call: ToolCallRequest): string | null => {
-403:   if ('function' in call && call.function?.name) {
-404:     return call.function.name
-405:   }
-406: 
-407:   if ('name' in call && typeof call.name === 'string') {
-408:     return call.name
-409:   }
-410: 
-411:   return null
-412: }
-413: 
-414: const resolveToolCallRequestId = (call: ToolCallRequest, index: number): string | null => {
-415:   if ('id' in call) {
-416:     const id = coerceNonEmptyString(call.id)
-417:     if (id) {
-418:       return id
-419:     }
-
-(Showing lines 300-419 of 598. Use offset=420 to continue.)
-</content>
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 31.3s)
-
-_Thinking:_
-
-**Deciding buildGeminiToolResponsePayload structure**
-
-Found that the original payload includes toolCallId alongside content, but the new JSON-parsing version drops toolCallId. Since toolCallId is used to correlate tool messages elsewhere, the response should keep toolCallId and parse content to an object if possible, falling back otherwise. Next, I'll implement a corrected version that preserves toolCallId while parsing content as JSON when possible.
-
-_Thinking:_
-
-**Analyzing toolCallId usage and response shape**
-
-Confirmed the user's replacement wants to parse and return the native JSON object without toolCallId in the response, matching Gemini's expected format. Since toolCallId is included in the parsed envelope anyway, omitting it from the explicit response is safe. I'll keep the toolCallId parameter to avoid signature changes but won't use it in the response, matching instructions exactly.
-
-**Tool: glob**
-
-**Input:**
-```json
-{
-  "pattern": "**/*eslint*",
-  "path": "/Users/eroberts/Projects/Helm"
-}
-```
-
-**Output:**
-```
-/Users/eroberts/Projects/Helm/eslint.config.mjs
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 2.9s)
-
-**Tool: read**
-
-**Input:**
-```json
-{
-  "filePath": "/Users/eroberts/Projects/Helm/eslint.config.mjs"
-}
-```
-
-**Output:**
-```
-<path>/Users/eroberts/Projects/Helm/eslint.config.mjs</path>
-<type>file</type>
-<content>1: import { defineConfig } from 'eslint/config'
-2: import tseslint from '@electron-toolkit/eslint-config-ts'
-3: import eslintConfigPrettier from '@electron-toolkit/eslint-config-prettier'
-4: import eslintPluginReact from 'eslint-plugin-react'
-5: import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
-6: import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
-7: 
-8: export default defineConfig(
-9:   { ignores: ['**/node_modules', '**/dist', '**/out'] },
-10:   tseslint.configs.recommended,
-11:   eslintPluginReact.configs.flat.recommended,
-12:   eslintPluginReact.configs.flat['jsx-runtime'],
-13:   {
-14:     settings: {
-15:       react: {
-16:         version: 'detect'
-17:       }
-18:     }
-19:   },
-20:   {
-21:     files: ['**/*.{ts,tsx}'],
-22:     plugins: {
-23:       'react-hooks': eslintPluginReactHooks,
-24:       'react-refresh': eslintPluginReactRefresh
-25:     },
-26:     rules: {
-27:       ...eslintPluginReactHooks.configs.recommended.rules,
-28:       ...eslintPluginReactRefresh.configs.vite.rules
-29:     }
-30:   },
-31:   eslintConfigPrettier
-32: )
-
-(End of file - total 32 lines)
-</content>
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 33.2s)
-
-_Thinking:_
-
-**Assessing unused parameter handling**
-
-I'm weighing whether to keep or use the unused toolCallId parameter to avoid lint errors while preserving the exact semantics the user provided, leaning toward using it in fallback or removing it if it conflicts with their instructions.
-
-_Thinking:_
-
-**Deciding how to handle unused parameter in fallback**
-
-The toolCallId parameter is needed to avoid lint errors but the user’s instructions don’t use it; including toolCallId in the fallback object preserves lint compliance without changing intended behavior, so I’ll implement fallback returning { result, toolCallId } while returning parsed object directly otherwise, ensuring arrays are excluded from parsed acceptance.
-
-**Tool: read**
-
-**Input:**
-```json
-{
-  "filePath": "/Users/eroberts/Projects/Helm/tsconfig.node.json"
-}
-```
-
-**Output:**
-```
-<path>/Users/eroberts/Projects/Helm/tsconfig.node.json</path>
-<type>file</type>
-<content>1: {
-2:   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-3:   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
-4:   "compilerOptions": {
-5:     "composite": true,
-6:     "types": ["electron-vite/node"],
-7:     "baseUrl": ".",
-8:     "paths": {
-9:       "@prompt-maker/core": ["src/main/core/index.ts"],
-10:       "@prompt-maker/core/*": ["src/main/core/*"]
-11:     }
-12:   }
-13: }
-
-(End of file - total 13 lines)
-</content>
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 41.0s)
-
-_Thinking:_
-
-**Deciding handling of unused parameter**
-
-Considering that unused parameters may trigger linter warnings, I'll keep the function signature intact and add a no-op usage of the unused toolCallId parameter to avoid warnings while matching the requested function behavior closely.
-
-_Thinking:_
-
-**Resolving unused parameter by void usage**
-
-To strictly follow the user’s snippet and avoid changing output, I’ll add `void toolCallId` after the try-catch to mark the parameter as used, preventing unused parameter errors without modifying the function’s returned object.
-
-**Tool: apply_patch**
-
-**Input:**
-```json
-{
-  "patchText": "*** Begin Patch\n*** Update File: /Users/eroberts/Projects/Helm/src/main/core/lib/llm/providers/gemini.ts\n@@\n const buildGeminiToolResponsePayload = (\n   content: Message['content'],\n   toolCallId: string,\n ): Record<string, unknown> => {\n-  return {\n-    toolCallId,\n-    content: serializeGeminiToolResponseContent(content),\n-  }\n+  const textContent = serializeGeminiToolResponseContent(content)\n+\n+  try {\n+    const parsed = JSON.parse(textContent)\n+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {\n+      return parsed as Record<string, unknown>\n+    }\n+  } catch {\n+    // Fall through if it's just raw text.\n+  }\n+\n+  void toolCallId\n+\n+  return { result: textContent }\n }\n*** End Patch"
-}
-```
-
-**Output:**
-```
-Success. Updated the following files:
-M src/main/core/lib/llm/providers/gemini.ts
-```
-
----
-
-## Assistant (Build · gpt-5.2-codex · 2.2s)
-
-Updated `buildGeminiToolResponsePayload` to parse tool output JSON into a native object and only fall back to a `{ result: textContent }` wrapper for non‑JSON or arrays. This matches Gemini’s expectations and avoids the malformed function call loop.
-
-File updated
-- `src/main/core/lib/llm/providers/gemini.ts`
 
 Tests not run.
 

@@ -97,8 +97,17 @@ export type ExecutorRunInput = {
   autoApprove?: boolean
 }
 
+export type ToolApprovalRequiredEvent = {
+  event: 'tool_approval_required'
+  timestamp: string
+  callId: string
+  toolName: string
+  plan: ToolExecutionPlan
+}
+
 export type ExecutorStreamEvent =
   | (AgentEvent & { timestamp: string })
+  | ToolApprovalRequiredEvent
   | { event: 'executor.complete'; timestamp: string; result: ExecutorResult }
 
 export const executorRunInputSchema = z.object({
@@ -109,12 +118,18 @@ export const executorRunInputSchema = z.object({
   autoApprove: z.boolean().optional(),
 })
 
+export const resolveToolApprovalInputSchema = z.object({
+  callId: z.string().min(1),
+  approved: z.boolean(),
+})
+
 type ExecutorRouterDeps = {
   runExecutor: (input: ExecutorRunInput) => Promise<ExecutorResult>
   streamExecutor: (
     input: ExecutorRunInput,
     emit: (event: ExecutorStreamEvent) => void,
   ) => Promise<void>
+  resolveToolApproval: (input: { callId: string; approved: boolean }) => Promise<{ ok: boolean }>
 }
 
 export const createAppRouter = (deps: ExecutorRouterDeps) => {
@@ -152,6 +167,9 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
         }
       })
     }),
+    resolveToolApproval: t.procedure
+      .input(resolveToolApprovalInputSchema)
+      .mutation(async ({ input }) => deps.resolveToolApproval(input)),
   })
 }
 
