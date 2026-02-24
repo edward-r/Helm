@@ -1,34 +1,22 @@
-:root {
-  --ev-c-white: #ffffff;
-  --ev-c-white-soft: #f8f8f8;
-  --ev-c-white-mute: #f2f2f2;
-
-  --ev-c-black: #1b1b1f;
-  --ev-c-black-soft: #222222;
-  --ev-c-black-mute: #282828;
-
-  --ev-c-gray-1: #515c67;
-  --ev-c-gray-2: #414853;
-  --ev-c-gray-3: #32363f;
-
-  --ev-c-text-1: rgba(255, 255, 245, 0.86);
-  --ev-c-text-2: rgba(235, 235, 245, 0.6);
-  --ev-c-text-3: rgba(235, 235, 245, 0.38);
-
-  --ev-button-alt-border: transparent;
-  --ev-button-alt-text: var(--ev-c-text-1);
-  --ev-button-alt-bg: var(--ev-c-gray-3);
-  --ev-button-alt-hover-border: transparent;
-  --ev-button-alt-hover-text: var(--ev-c-text-1);
-  --ev-button-alt-hover-bg: var(--ev-c-gray-2);
-}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 :root {
-  --color-background: var(--ev-c-black);
-  --color-background-soft: var(--ev-c-black-soft);
-  --color-background-mute: var(--ev-c-black-mute);
-
-  --color-text: var(--ev-c-text-1);
+  color-scheme: light;
+  --ps-bg: #f6f1ea;
+  --ps-bg-soft: #f0e9df;
+  --ps-panel: #fbf8f3;
+  --ps-panel-strong: #ffffff;
+  --ps-slate-1: #2d333b;
+  --ps-slate-2: #4b5563;
+  --ps-slate-3: #7a858f;
+  --ps-border: #d8cfc3;
+  --ps-accent: #2c8ca1;
+  --ps-accent-strong: #1f7386;
+  --ps-accent-soft: rgba(44, 140, 161, 0.16);
+  --ps-success: #2f8f6b;
+  --ps-error: #c95d4b;
+  --ps-shadow: 0 24px 45px rgba(62, 49, 39, 0.18);
+  --ps-shadow-soft: 0 18px 30px rgba(62, 49, 39, 0.12);
 }
 
 *,
@@ -36,32 +24,39 @@
 *::after {
   box-sizing: border-box;
   margin: 0;
-  font-weight: normal;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--ps-slate-1);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.9), transparent 55%),
+    radial-gradient(circle at 82% 8%, rgba(205, 231, 236, 0.55), transparent 40%),
+    linear-gradient(140deg, #f8f3ed 0%, #f3eee6 48%, #efe8de 100%);
+  font-family: 'IBM Plex Sans', 'IBM Plex Sans Text', 'Helvetica Neue', sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
 }
 
 ul {
   list-style: none;
 }
 
-body {
-  min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-background);
-  line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: var(--ps-accent-soft);
 }
