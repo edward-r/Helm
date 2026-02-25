@@ -1,6 +1,7 @@
 import { useAgentStore } from '../store/useAgentStore'
 import InputPanel from './InputPanel'
 import MessageBubble from './MessageBubble'
+import SettingsModal from './SettingsModal'
 import TestPlayground from './TestPlayground'
 import TimelineFeed from './TimelineFeed'
 import ToolApprovalModal from './ToolApprovalModal'
@@ -12,6 +13,7 @@ const WorkspaceLayout = () => {
   const streamError = useAgentStore((state) => state.streamError)
   const model = useAgentStore((state) => state.model)
   const clearHistory = useAgentStore((state) => state.clearHistory)
+  const openSettings = useAgentStore((state) => state.openSettings)
 
   return (
     <div className="workspace-layout">
@@ -40,6 +42,9 @@ const WorkspaceLayout = () => {
             <div className="workspace-subtitle">Polished signals from the executor stream</div>
           </div>
           <div className="workspace-actions">
+            <button type="button" className="button is-secondary" onClick={openSettings}>
+              Settings
+            </button>
             <button type="button" className="button is-secondary" onClick={clearHistory}>
               Clear
             </button>
@@ -58,6 +63,7 @@ const WorkspaceLayout = () => {
       </main>
       <ToolApprovalModal />
       <TestPlayground />
+      <SettingsModal />
     </div>
   )
 }

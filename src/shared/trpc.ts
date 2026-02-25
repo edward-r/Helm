@@ -112,6 +112,21 @@ export type ValidationReport = {
   improvements: string[]
 }
 
+export type AppConfig = {
+  openaiKey?: string
+  geminiKey?: string
+  defaultModel?: string
+}
+
+export type ModelInfo = {
+  id: string
+  name: string
+  provider: string
+  contextLength?: number
+  toolCall?: boolean
+  inputModalities?: string[]
+}
+
 export type ExecutorRunInput = {
   systemPrompt: string
   userIntent: string
@@ -145,6 +160,12 @@ export const executorRunInputSchema = z.object({
   history: z.array(z.any()).optional()
 })
 
+export const updateConfigInputSchema = z.object({
+  openaiKey: z.string().optional(),
+  geminiKey: z.string().optional(),
+  defaultModel: z.string().optional()
+})
+
 export const resolveToolApprovalInputSchema = z.object({
   callId: z.string().min(1),
   approved: z.boolean()
@@ -156,6 +177,9 @@ type ExecutorRouterDeps = {
     input: ExecutorRunInput,
     emit: (event: ExecutorStreamEvent) => void
   ) => Promise<void>
+  getConfig: () => Promise<AppConfig>
+  updateConfig: (updates: AppConfig) => Promise<AppConfig>
+  getModels: () => Promise<ModelInfo[]>
   validatePrompt: (input: { promptText: string; model: string }) => Promise<ValidationReport>
   resolveToolApproval: (input: { callId: string; approved: boolean }) => Promise<{ ok: boolean }>
   selectFiles: () => Promise<string[]>
@@ -196,6 +220,11 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
         }
       })
     }),
+    getConfig: t.procedure.query(async () => deps.getConfig()),
+    updateConfig: t.procedure
+      .input(updateConfigInputSchema)
+      .mutation(async ({ input }) => deps.updateConfig(input)),
+    getModels: t.procedure.query(async () => deps.getModels()),
     validatePrompt: t.procedure
       .input(z.object({ promptText: z.string(), model: z.string() }))
       .mutation(async ({ input }) => deps.validatePrompt(input)),

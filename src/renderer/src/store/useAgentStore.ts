@@ -24,6 +24,7 @@ type AgentState = {
   finalResult: ExecutorResult | null
   validationReport: ValidationReport | null
   isValidating: boolean
+  isSettingsOpen: boolean
   streamError: string | null
   isStreaming: boolean
   pendingApproval: { callId: string; toolName: string; plan: ToolExecutionPlan } | null
@@ -38,6 +39,8 @@ type AgentState = {
   clearRun: () => void
   clearHistory: () => void
   runValidation: (text: string) => Promise<void>
+  openSettings: () => void
+  closeSettings: () => void
   executeIntent: () => void
   stopExecution: () => void
   submitApproval: (approved: boolean) => Promise<void>
@@ -77,6 +80,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   finalResult: null,
   validationReport: null,
   isValidating: false,
+  isSettingsOpen: false,
   streamError: null,
   isStreaming: false,
   pendingApproval: null,
@@ -127,6 +131,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ validationReport: null, isValidating: false })
     }
   },
+  openSettings: () => set({ isSettingsOpen: true }),
+  closeSettings: () => set({ isSettingsOpen: false }),
   executeIntent: () => {
     const {
       systemPrompt,

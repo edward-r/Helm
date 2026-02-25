@@ -7,6 +7,7 @@ import { createAppRouter } from '../shared/trpc'
 import type { AppRouter, ExecutorRunInput, ExecutorStreamEvent } from '../shared/trpc'
 import { executeExecutor, type ExecutorInput } from './agent/executor'
 import { evaluatePrompt } from './agent/validator'
+import { fetchAvailableModels, getConfig, updateConfig } from './config-manager'
 import icon from '../../resources/icon.png?asset'
 
 let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null
@@ -90,6 +91,22 @@ const streamExecutor = async (
 const appRouter = createAppRouter({
   runExecutor,
   streamExecutor,
+  getConfig: async () => getConfig(),
+  updateConfig: async (updates) => {
+    const next = await updateConfig(updates)
+    if (next.openaiKey) {
+      process.env.OPENAI_API_KEY = next.openaiKey
+    } else {
+      delete process.env.OPENAI_API_KEY
+    }
+    if (next.geminiKey) {
+      process.env.GEMINI_API_KEY = next.geminiKey
+    } else {
+      delete process.env.GEMINI_API_KEY
+    }
+    return next
+  },
+  getModels: async () => fetchAvailableModels(),
   validatePrompt: async ({ promptText, model }) => evaluatePrompt(promptText, model),
   selectFiles: async () => {
     const result = await dialog.showOpenDialog({
@@ -160,6 +177,14 @@ function registerWindow(window: BrowserWindow): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  void getConfig().then((config) => {
+    if (config.openaiKey) {
+      process.env.OPENAI_API_KEY = config.openaiKey
+    }
+    if (config.geminiKey) {
+      process.env.GEMINI_API_KEY = config.geminiKey
+    }
+  })
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.helm.app')
 
