@@ -21,7 +21,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_dir: 'Scanning a folder',
   write_file: 'Writing a file',
   generate_image: 'Generating an image',
-  analyze_image_to_code: 'Analyzing an image',
+  analyze_image_to_code: 'Analyzing an image'
 }
 
 const formatTimestamp = (value: string): string => {
@@ -48,7 +48,7 @@ const describeThinkingEvent = (event: ThinkingEvent): { label: string; detail: s
     case 'llm_call_start':
       return {
         label: 'Analyzing the request',
-        detail: `Consulting ${event.model}`,
+        detail: `Consulting ${event.model}`
       }
     case 'llm_call_end':
       if (event.result === 'final_text') {
@@ -69,7 +69,10 @@ const describeThinkingEvent = (event: ThinkingEvent): { label: string; detail: s
   }
 }
 
-const buildThinkingItem = (event: ThinkingEvent & { timestamp: string }, index: number): TimelineItem => {
+const buildThinkingItem = (
+  event: ThinkingEvent & { timestamp: string },
+  index: number
+): TimelineItem => {
   const description = describeThinkingEvent(event)
   const status: TimelineItemStatus = event.phase === 'tool_call_error' ? 'error' : 'active'
   return {
@@ -77,13 +80,13 @@ const buildThinkingItem = (event: ThinkingEvent & { timestamp: string }, index: 
     label: description.label,
     detail: description.detail,
     status,
-    timestamp: formatTimestamp(event.timestamp),
+    timestamp: formatTimestamp(event.timestamp)
   }
 }
 
 const buildToolSuccessItem = (
   event: ToolSuccessEvent & { timestamp: string },
-  index: number,
+  index: number
 ): TimelineItem => {
   const label = TOOL_LABELS[event.toolName] ?? `Running ${event.toolName}`
   const duration = formatDuration(event.durationMs)
@@ -93,13 +96,13 @@ const buildToolSuccessItem = (
     label,
     detail,
     status: 'success',
-    timestamp: formatTimestamp(event.timestamp),
+    timestamp: formatTimestamp(event.timestamp)
   }
 }
 
 const buildToolErrorItem = (
   event: ToolErrorEvent & { timestamp: string },
-  index: number,
+  index: number
 ): TimelineItem => {
   const label = TOOL_LABELS[event.toolName] ?? `Running ${event.toolName}`
   return {
@@ -107,7 +110,7 @@ const buildToolErrorItem = (
     label,
     detail: event.errorMessage,
     status: 'error',
-    timestamp: formatTimestamp(event.timestamp),
+    timestamp: formatTimestamp(event.timestamp)
   }
 }
 
@@ -118,7 +121,7 @@ const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem
       label: event.result.ok ? 'Response ready' : 'Execution ended with errors',
       detail: event.result.ok ? 'Final response assembled.' : event.result.error.message,
       status: event.result.ok ? 'success' : 'error',
-      timestamp: formatTimestamp(event.timestamp),
+      timestamp: formatTimestamp(event.timestamp)
     }
   }
 
@@ -128,7 +131,7 @@ const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem
       label: `Approval needed for ${event.toolName}`,
       detail: event.plan.riskReason ?? 'Awaiting approval to proceed.',
       status: 'neutral',
-      timestamp: formatTimestamp(event.timestamp),
+      timestamp: formatTimestamp(event.timestamp)
     }
   }
 
@@ -143,34 +146,43 @@ const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem
   return buildToolErrorItem(event, index)
 }
 
-const TimelineFeed = () => {
-  const events = useAgentStore((state) => state.events)
-  const userIntent = useAgentStore((state) => state.userIntent)
-  const isStreaming = useAgentStore((state) => state.isStreaming)
+type TimelineFeedProps = {
+  events?: ExecutorStreamEvent[]
+  userIntent?: string
+  isStreaming?: boolean
+}
+
+const TimelineFeed = ({ events, userIntent, isStreaming }: TimelineFeedProps) => {
+  const agentEvents = useAgentStore((state) => state.events)
+  const agentIntent = useAgentStore((state) => state.userIntent)
+  const agentStreaming = useAgentStore((state) => state.isStreaming)
+
+  const resolvedEvents = events ?? agentEvents
+  const resolvedIntent = userIntent ?? agentIntent
+  const resolvedStreaming = isStreaming ?? agentStreaming
 
   const items = useMemo(() => {
-    const timelineItems = events
+    const timelineItems = resolvedEvents
       .map((event, index) => mapEventToItem(event, index))
       .filter((event): event is TimelineItem => event !== null)
 
-    if (!userIntent.trim()) {
+    if (!resolvedIntent.trim()) {
       return timelineItems
     }
 
-    if (timelineItems.length === 0 && !isStreaming) {
+    if (timelineItems.length === 0 && !resolvedStreaming) {
       return timelineItems
     }
 
-    return [
-      {
-        id: 'user-intent',
-        label: 'Intent received',
-        detail: userIntent.trim(),
-        status: 'neutral',
-      },
-      ...timelineItems,
-    ]
-  }, [events, userIntent, isStreaming])
+    const intentItem: TimelineItem = {
+      id: 'user-intent',
+      label: 'Intent received',
+      detail: resolvedIntent.trim(),
+      status: 'neutral'
+    }
+
+    return [intentItem, ...timelineItems]
+  }, [resolvedEvents, resolvedIntent, resolvedStreaming])
 
   if (items.length === 0) {
     return (
