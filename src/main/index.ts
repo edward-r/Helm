@@ -16,7 +16,7 @@ const timestamp = (): string => new Date().toISOString()
 
 const createOnToolApproval = (
   autoApprove: boolean,
-  emit?: (event: ExecutorStreamEvent) => void,
+  emit?: (event: ExecutorStreamEvent) => void
 ): ExecutorInput['onToolApproval'] => {
   return async ({ call, plan }) => {
     if (autoApprove) {
@@ -31,7 +31,7 @@ const createOnToolApproval = (
         timestamp: timestamp(),
         callId,
         toolName: plan.toolName,
-        plan,
+        plan
       })
     }
 
@@ -40,7 +40,7 @@ const createOnToolApproval = (
     })
 
     return approvalPromise.then((decision) =>
-      decision.approved ? { approved: true } : { approved: false },
+      decision.approved ? { approved: true } : { approved: false }
     )
   }
 }
@@ -54,13 +54,14 @@ const runExecutor = async (input: ExecutorRunInput) => {
     model: input.model,
     maxIterations: input.maxIterations,
     attachments: input.attachments,
-    onToolApproval,
+    history: input.history,
+    onToolApproval
   })
 }
 
 const streamExecutor = async (
   input: ExecutorRunInput,
-  emit: (event: ExecutorStreamEvent) => void,
+  emit: (event: ExecutorStreamEvent) => void
 ): Promise<void> => {
   const autoApprove = input.autoApprove === true
   const onThinkingEvent: ExecutorInput['onThinkingEvent'] = (event) => {
@@ -76,9 +77,10 @@ const streamExecutor = async (
     model: input.model,
     maxIterations: input.maxIterations,
     attachments: input.attachments,
+    history: input.history,
     onThinkingEvent,
     onToolEvent,
-    onToolApproval: createOnToolApproval(autoApprove, emit),
+    onToolApproval: createOnToolApproval(autoApprove, emit)
   })
 
   emit({ event: 'executor.complete', timestamp: timestamp(), result })
@@ -89,7 +91,7 @@ const appRouter = createAppRouter({
   streamExecutor,
   selectFiles: async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
+      properties: ['openFile', 'multiSelections']
     })
     return result.filePaths
   },
@@ -101,7 +103,7 @@ const appRouter = createAppRouter({
     resolver({ approved })
     pendingApprovals.delete(callId)
     return { ok: true }
-  },
+  }
 })
 
 function createWindow(): BrowserWindow {

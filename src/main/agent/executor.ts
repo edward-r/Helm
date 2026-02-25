@@ -44,6 +44,7 @@ export type ExecutorInput = {
   tools?: AgentTool[]
   maxIterations?: number
   attachments?: string[]
+  history?: Message[]
   onThinkingEvent?: (event: ThinkingEvent) => void
   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
   onToolEvent?: (event: ToolExecutionEvent) => void
@@ -119,32 +120,44 @@ const VIDEO_MIME_TYPES: Record<string, string> = {
 }
 
 export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
-  const history = await createInitialHistory(
-    input.systemPrompt,
-    input.userIntent,
-    input.model,
-    input.attachments
-  )
+  const history = input.history ?? []
+  const hasHistory = history.length > 0
+  let currentHistory = hasHistory
+    ? [...history]
+    : await createInitialHistory(
+        input.systemPrompt,
+        input.userIntent,
+        input.model,
+        input.attachments
+      )
+
+  if (hasHistory) {
+    const userMessage = await buildUserMessage(input.userIntent, input.model, input.attachments)
+    const systemMessage: Message = { role: 'system', content: input.systemPrompt }
+    const historyWithSystem = currentHistory.some((message) => message.role === 'system')
+      ? currentHistory
+      : [systemMessage, ...currentHistory]
+    currentHistory = [...historyWithSystem, userMessage]
+  }
   const toolDefinitions: ToolDefinition[] = ALL_TOOLS
   const registryError = validateToolRegistry(ALL_TOOLS)
   if (registryError) {
-    return { ok: false, error: registryError, messages: history }
+    return { ok: false, error: registryError, messages: currentHistory }
   }
   const toolExecutorsResult = resolveToolExecutors(input.tools)
   if (!toolExecutorsResult.ok) {
-    return { ok: false, error: toolExecutorsResult.error, messages: history }
+    return { ok: false, error: toolExecutorsResult.error, messages: currentHistory }
   }
   const toolExecutors = toolExecutorsResult.value
   const executorRegistryError = validateToolRegistry(toolExecutors)
   if (executorRegistryError) {
-    return { ok: false, error: executorRegistryError, messages: history }
+    return { ok: false, error: executorRegistryError, messages: currentHistory }
   }
   const toolMap = new Map<string, AgentTool>(
     toolExecutors.map((tool: AgentTool) => [tool.name, tool])
   )
   const maxIterations = input.maxIterations ?? DEFAULT_MAX_ITERATIONS
 
-  let currentHistory = history
   let lastPlans: ToolExecutionPlan[] | undefined
   let bestKnownText: string | null = null
 
@@ -346,17 +359,13 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
   }
 }
 
-const createInitialHistory = async (
-  systemPrompt: string,
+const buildUserMessage = async (
   userIntent: string,
   model: string,
   attachments?: string[]
-): Promise<Message[]> => {
+): Promise<Message> => {
   if (!attachments || attachments.length === 0) {
-    return [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userIntent }
-    ]
+    return { role: 'user', content: userIntent }
   }
 
   const parts: Array<TextPart | ImagePart | PdfPart | VideoPart> = []
@@ -408,10 +417,17 @@ const createInitialHistory = async (
 
   parts.push({ type: 'text', text: userIntent })
 
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: parts }
-  ]
+  return { role: 'user', content: parts }
+}
+
+const createInitialHistory = async (
+  systemPrompt: string,
+  userIntent: string,
+  model: string,
+  attachments?: string[]
+): Promise<Message[]> => {
+  const userMessage = await buildUserMessage(userIntent, model, attachments)
+  return [{ role: 'system', content: systemPrompt }, userMessage]
 }
 
 const buildAssistantMessage = (content: string | null, toolCalls?: ToolCall[]): Message => {

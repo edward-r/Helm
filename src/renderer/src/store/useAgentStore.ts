@@ -1,4 +1,3 @@
-import type { Unsubscribable } from '@trpc/client'
 import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
@@ -6,8 +5,11 @@ import type {
   ExecutorResult,
   ExecutorRunInput,
   ExecutorStreamEvent,
-  ToolExecutionPlan,
+  Message,
+  ToolExecutionPlan
 } from '../../../shared/trpc'
+
+type Unsubscribable = { unsubscribe: () => void }
 
 type AgentState = {
   systemPrompt: string
@@ -16,6 +18,7 @@ type AgentState = {
   maxIterations: string
   autoApprove: boolean
   attachments: string[]
+  chatHistory: Message[]
   events: ExecutorStreamEvent[]
   finalResult: ExecutorResult | null
   streamError: string | null
@@ -30,6 +33,7 @@ type AgentState = {
   removeAttachment: (path: string) => void
   clearAttachments: () => void
   clearRun: () => void
+  clearHistory: () => void
   executeIntent: () => void
   stopExecution: () => void
   submitApproval: (approved: boolean) => Promise<void>
@@ -64,6 +68,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   maxIterations: DEFAULT_MAX_ITERATIONS,
   autoApprove: false,
   attachments: [],
+  chatHistory: [],
   events: [],
   finalResult: null,
   streamError: null,
@@ -92,13 +97,29 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       events: [],
       finalResult: null,
       streamError: null,
-      pendingApproval: null,
+      pendingApproval: null
+    }),
+  clearHistory: () =>
+    set({
+      chatHistory: [],
+      userIntent: DEFAULT_USER_INTENT,
+      finalResult: null
     }),
   executeIntent: () => {
-    const { systemPrompt, userIntent, model, maxIterations, autoApprove, attachments } = get()
+    const {
+      systemPrompt,
+      userIntent,
+      model,
+      maxIterations,
+      autoApprove,
+      attachments,
+      chatHistory
+    } = get()
     const trimmedSystemPrompt = systemPrompt.trim()
     const trimmedIntent = userIntent.trim()
     const trimmedModel = model.trim()
+    const intentForRun = trimmedIntent
+    const historyForRun = chatHistory.length > 0 ? chatHistory : undefined
 
     if (!trimmedSystemPrompt || !trimmedIntent || !trimmedModel) {
       set({ streamError: 'System prompt, intent, and model are required.' })
@@ -111,7 +132,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       finalResult: null,
       streamError: null,
       isStreaming: true,
-      pendingApproval: null,
+      pendingApproval: null
     })
 
     const maxIterationsValue = normalizeMaxIterations(maxIterations)
@@ -123,6 +144,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       ...(maxIterationsValue ? { maxIterations: maxIterationsValue } : {}),
       ...(autoApprove ? { autoApprove: true } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(historyForRun ? { history: historyForRun } : {})
     }
 
     get().clearAttachments()
@@ -134,6 +156,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const nextState: Partial<AgentState> = { events: nextEvents }
 
           if (event.event === 'executor.complete') {
+            if (event.result.ok) {
+              const userMessage: Message = { role: 'user', content: intentForRun }
+              const assistantMessage: Message = {
+                role: 'assistant',
+                content: event.result.value.text
+              }
+              nextState.chatHistory = [...state.chatHistory, userMessage, assistantMessage]
+            }
             nextState.finalResult = event.result
             nextState.isStreaming = false
             nextState.pendingApproval = null
@@ -143,7 +173,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             nextState.pendingApproval = {
               callId: event.callId,
               toolName: event.toolName,
-              plan: event.plan,
+              plan: event.plan
             }
           }
 
@@ -158,7 +188,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       onComplete: () => {
         set({ isStreaming: false, pendingApproval: null })
         stopActiveSubscription()
-      },
+      }
     })
   },
   stopExecution: () => {
@@ -174,12 +204,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       await trpcClient.resolveToolApproval.mutate({
         callId: pendingApproval.callId,
-        approved,
+        approved
       })
       set({ pendingApproval: null })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to send approval.'
       set({ streamError: message, pendingApproval: null })
     }
-  },
+  }
 }))

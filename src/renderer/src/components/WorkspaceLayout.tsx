@@ -9,6 +9,7 @@ const WorkspaceLayout = () => {
   const finalResult = useAgentStore((state) => state.finalResult)
   const streamError = useAgentStore((state) => state.streamError)
   const model = useAgentStore((state) => state.model)
+  const clearHistory = useAgentStore((state) => state.clearHistory)
 
   return (
     <div className="workspace-layout">
@@ -34,12 +35,15 @@ const WorkspaceLayout = () => {
         <header className="workspace-header">
           <div>
             <div className="workspace-title">Chat Timeline</div>
-            <div className="workspace-subtitle">
-              Polished signals from the executor stream
-            </div>
+            <div className="workspace-subtitle">Polished signals from the executor stream</div>
           </div>
-          <div className={`status-chip${isStreaming ? ' is-active' : ''}`}>
-            {isStreaming ? 'Streaming' : 'Idle'}
+          <div className="workspace-actions">
+            <button type="button" className="button is-secondary" onClick={clearHistory}>
+              Clear
+            </button>
+            <div className={`status-chip${isStreaming ? ' is-active' : ''}`}>
+              {isStreaming ? 'Streaming' : 'Idle'}
+            </div>
           </div>
         </header>
         <div className="workspace-feed">

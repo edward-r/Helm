@@ -21,8 +21,25 @@ export type MessageContent = string | (TextPart | ImagePart | VideoPart | PdfPar
 export type ToolCall = {
   id?: string
   name: string
-  arguments: unknown
+  arguments?: unknown
 }
+
+export type ToolCallRequest =
+  | ToolCall
+  | {
+      id: string
+      type: 'function'
+      function: {
+        name: string
+        arguments: string
+      }
+    }
+  | {
+      id: string
+      name: string
+      arguments: string
+      type?: string
+    }
 
 export type ToolExecutionPlan = {
   toolName: string
@@ -40,8 +57,8 @@ export type ToolExecutionPlan = {
 export type Message = {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: MessageContent
-  toolCalls?: ToolCall[]
-  tool_calls?: ToolCall[]
+  toolCalls?: ToolCallRequest[]
+  tool_calls?: ToolCallRequest[]
   toolCallId?: string
   tool_call_id?: string
 }
@@ -96,6 +113,7 @@ export type ExecutorRunInput = {
   maxIterations?: number
   autoApprove?: boolean
   attachments?: string[]
+  history?: Message[]
 }
 
 export type ToolApprovalRequiredEvent = {
@@ -118,18 +136,19 @@ export const executorRunInputSchema = z.object({
   maxIterations: z.number().int().positive().optional(),
   autoApprove: z.boolean().optional(),
   attachments: z.array(z.string()).optional(),
+  history: z.array(z.any()).optional()
 })
 
 export const resolveToolApprovalInputSchema = z.object({
   callId: z.string().min(1),
-  approved: z.boolean(),
+  approved: z.boolean()
 })
 
 type ExecutorRouterDeps = {
   runExecutor: (input: ExecutorRunInput) => Promise<ExecutorResult>
   streamExecutor: (
     input: ExecutorRunInput,
-    emit: (event: ExecutorStreamEvent) => void,
+    emit: (event: ExecutorStreamEvent) => void
   ) => Promise<void>
   resolveToolApproval: (input: { callId: string; approved: boolean }) => Promise<{ ok: boolean }>
   selectFiles: () => Promise<string[]>
@@ -173,7 +192,7 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
     resolveToolApproval: t.procedure
       .input(resolveToolApprovalInputSchema)
       .mutation(async ({ input }) => deps.resolveToolApproval(input)),
-    selectFiles: t.procedure.query(async () => deps.selectFiles()),
+    selectFiles: t.procedure.query(async () => deps.selectFiles())
   })
 }
 

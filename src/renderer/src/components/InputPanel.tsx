@@ -11,6 +11,7 @@ const InputPanel = () => {
   const maxIterations = useAgentStore((state) => state.maxIterations)
   const autoApprove = useAgentStore((state) => state.autoApprove)
   const attachments = useAgentStore((state) => state.attachments)
+  const hasHistory = useAgentStore((state) => state.chatHistory.length > 0)
   const isStreaming = useAgentStore((state) => state.isStreaming)
   const streamError = useAgentStore((state) => state.streamError)
   const setUserIntent = useAgentStore((state) => state.setUserIntent)
@@ -32,7 +33,7 @@ const InputPanel = () => {
         executeIntent()
       }
     },
-    [canSubmit, executeIntent],
+    [canSubmit, executeIntent]
   )
 
   const handleKeyDown = useCallback(
@@ -44,7 +45,7 @@ const InputPanel = () => {
         }
       }
     },
-    [executeIntent, isStreaming],
+    [executeIntent, isStreaming]
   )
 
   const handleAttach = useCallback(async () => {
@@ -92,7 +93,11 @@ const InputPanel = () => {
       <textarea
         className="input-textarea"
         rows={4}
-        placeholder="Ask for a plan, write a spec, draft code changes, or gather research..."
+        placeholder={
+          hasHistory
+            ? "How would you like to refine this prompt? (e.g., 'Make it more concise', 'Add a section for JSON output') "
+            : 'Ask for a plan, write a spec, draft code changes, or gather research...'
+        }
         value={userIntent}
         onChange={(event) => setUserIntent(event.target.value)}
         onKeyDown={handleKeyDown}
@@ -129,7 +134,7 @@ const InputPanel = () => {
             Attach Files
           </button>
           <button type="submit" className="button is-primary" disabled={!canSubmit}>
-            Generate
+            {hasHistory ? 'Refine' : 'Generate'}
           </button>
         </div>
       </div>
