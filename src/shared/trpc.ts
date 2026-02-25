@@ -95,6 +95,7 @@ export type ExecutorRunInput = {
   model: string
   maxIterations?: number
   autoApprove?: boolean
+  attachments?: string[]
 }
 
 export type ToolApprovalRequiredEvent = {
@@ -116,6 +117,7 @@ export const executorRunInputSchema = z.object({
   model: z.string().min(1),
   maxIterations: z.number().int().positive().optional(),
   autoApprove: z.boolean().optional(),
+  attachments: z.array(z.string()).optional(),
 })
 
 export const resolveToolApprovalInputSchema = z.object({
@@ -130,6 +132,7 @@ type ExecutorRouterDeps = {
     emit: (event: ExecutorStreamEvent) => void,
   ) => Promise<void>
   resolveToolApproval: (input: { callId: string; approved: boolean }) => Promise<{ ok: boolean }>
+  selectFiles: () => Promise<string[]>
 }
 
 export const createAppRouter = (deps: ExecutorRouterDeps) => {
@@ -170,6 +173,7 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
     resolveToolApproval: t.procedure
       .input(resolveToolApprovalInputSchema)
       .mutation(async ({ input }) => deps.resolveToolApproval(input)),
+    selectFiles: t.procedure.query(async () => deps.selectFiles()),
   })
 }
 

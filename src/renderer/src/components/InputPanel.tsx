@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 
+import { trpcClient } from '../trpc'
 import { useAgentStore } from '../store/useAgentStore'
 
 const InputPanel = () => {
@@ -9,6 +10,7 @@ const InputPanel = () => {
   const model = useAgentStore((state) => state.model)
   const maxIterations = useAgentStore((state) => state.maxIterations)
   const autoApprove = useAgentStore((state) => state.autoApprove)
+  const attachments = useAgentStore((state) => state.attachments)
   const isStreaming = useAgentStore((state) => state.isStreaming)
   const streamError = useAgentStore((state) => state.streamError)
   const setUserIntent = useAgentStore((state) => state.setUserIntent)
@@ -16,6 +18,8 @@ const InputPanel = () => {
   const setModel = useAgentStore((state) => state.setModel)
   const setMaxIterations = useAgentStore((state) => state.setMaxIterations)
   const setAutoApprove = useAgentStore((state) => state.setAutoApprove)
+  const addAttachments = useAgentStore((state) => state.addAttachments)
+  const removeAttachment = useAgentStore((state) => state.removeAttachment)
   const executeIntent = useAgentStore((state) => state.executeIntent)
   const stopExecution = useAgentStore((state) => state.stopExecution)
 
@@ -43,6 +47,22 @@ const InputPanel = () => {
     [executeIntent, isStreaming],
   )
 
+  const handleAttach = useCallback(async () => {
+    try {
+      const result = await trpcClient.selectFiles.query()
+      if (result.length > 0) {
+        addAttachments(result)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }, [addAttachments])
+
+  const getAttachmentName = useCallback((filePath: string) => {
+    const parts = filePath.split(/[/\\]/)
+    return parts[parts.length - 1] ?? filePath
+  }, [])
+
   return (
     <form className="input-panel" onSubmit={handleSubmit}>
       <div className="input-header">
@@ -52,6 +72,23 @@ const InputPanel = () => {
         </div>
         <div className="input-status">{isStreaming ? 'Running' : 'Ready'}</div>
       </div>
+      {attachments.length > 0 ? (
+        <div className="attachment-list">
+          {attachments.map((filePath) => (
+            <div key={filePath} className="attachment-chip">
+              <span>{getAttachmentName(filePath)}</span>
+              <button
+                type="button"
+                className="attachment-remove"
+                onClick={() => removeAttachment(filePath)}
+                aria-label="Remove attachment"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <textarea
         className="input-textarea"
         rows={4}
@@ -83,6 +120,14 @@ const InputPanel = () => {
               Stop
             </button>
           ) : null}
+          <button
+            type="button"
+            className="button is-secondary"
+            onClick={() => void handleAttach()}
+            disabled={isStreaming}
+          >
+            Attach Files
+          </button>
           <button type="submit" className="button is-primary" disabled={!canSubmit}>
             Generate
           </button>

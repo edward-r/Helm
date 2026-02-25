@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -53,6 +53,7 @@ const runExecutor = async (input: ExecutorRunInput) => {
     userIntent: input.userIntent,
     model: input.model,
     maxIterations: input.maxIterations,
+    attachments: input.attachments,
     onToolApproval,
   })
 }
@@ -74,6 +75,7 @@ const streamExecutor = async (
     userIntent: input.userIntent,
     model: input.model,
     maxIterations: input.maxIterations,
+    attachments: input.attachments,
     onThinkingEvent,
     onToolEvent,
     onToolApproval: createOnToolApproval(autoApprove, emit),
@@ -85,6 +87,12 @@ const streamExecutor = async (
 const appRouter = createAppRouter({
   runExecutor,
   streamExecutor,
+  selectFiles: async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+    })
+    return result.filePaths
+  },
   resolveToolApproval: async ({ callId, approved }) => {
     const resolver = pendingApprovals.get(callId)
     if (!resolver) {

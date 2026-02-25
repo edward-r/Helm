@@ -15,6 +15,7 @@ type AgentState = {
   model: string
   maxIterations: string
   autoApprove: boolean
+  attachments: string[]
   events: ExecutorStreamEvent[]
   finalResult: ExecutorResult | null
   streamError: string | null
@@ -25,6 +26,9 @@ type AgentState = {
   setModel: (value: string) => void
   setMaxIterations: (value: string) => void
   setAutoApprove: (value: boolean) => void
+  addAttachments: (paths: string[]) => void
+  removeAttachment: (path: string) => void
+  clearAttachments: () => void
   clearRun: () => void
   executeIntent: () => void
   stopExecution: () => void
@@ -59,6 +63,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   model: DEFAULT_MODEL,
   maxIterations: DEFAULT_MAX_ITERATIONS,
   autoApprove: false,
+  attachments: [],
   events: [],
   finalResult: null,
   streamError: null,
@@ -69,6 +74,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   setModel: (value) => set({ model: value }),
   setMaxIterations: (value) => set({ maxIterations: value }),
   setAutoApprove: (value) => set({ autoApprove: value }),
+  addAttachments: (paths) =>
+    set((state) => {
+      const next = [...state.attachments]
+      for (const filePath of paths) {
+        if (!next.includes(filePath)) {
+          next.push(filePath)
+        }
+      }
+      return { attachments: next }
+    }),
+  removeAttachment: (path) =>
+    set((state) => ({ attachments: state.attachments.filter((item) => item !== path) })),
+  clearAttachments: () => set({ attachments: [] }),
   clearRun: () =>
     set({
       events: [],
@@ -77,7 +95,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       pendingApproval: null,
     }),
   executeIntent: () => {
-    const { systemPrompt, userIntent, model, maxIterations, autoApprove } = get()
+    const { systemPrompt, userIntent, model, maxIterations, autoApprove, attachments } = get()
     const trimmedSystemPrompt = systemPrompt.trim()
     const trimmedIntent = userIntent.trim()
     const trimmedModel = model.trim()
@@ -104,7 +122,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       model: trimmedModel,
       ...(maxIterationsValue ? { maxIterations: maxIterationsValue } : {}),
       ...(autoApprove ? { autoApprove: true } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
     }
+
+    get().clearAttachments()
 
     activeSubscription = trpcClient.executorStream.subscribe(input, {
       onData: (event) => {

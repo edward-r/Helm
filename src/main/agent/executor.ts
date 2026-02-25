@@ -1,5 +1,16 @@
-import type { LLMResult, ToolCall, ToolDefinition } from '@prompt-maker/core'
-import { callLLM, type Message } from '@prompt-maker/core'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+
+import type {
+  ImagePart,
+  LLMResult,
+  Message,
+  PdfPart,
+  TextPart,
+  ToolCall,
+  ToolDefinition,
+} from '@prompt-maker/core'
+import { callLLM } from '@prompt-maker/core'
 
 import type { AgentTool } from './tools/tool-types'
 import { ALL_TOOLS } from './tools'
@@ -29,6 +40,7 @@ export type ExecutorInput = {
   model: string
   tools?: AgentTool[]
   maxIterations?: number
+  attachments?: string[]
   onThinkingEvent?: (event: ThinkingEvent) => void
   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
   onToolEvent?: (event: ToolExecutionEvent) => void
@@ -96,7 +108,11 @@ const DEFAULT_MAX_ITERATIONS = 20
 const BEST_KNOWN_TEXT_MAX = 240
 
 export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
-  const history = createInitialHistory(input.systemPrompt, input.userIntent)
+  const history = await createInitialHistory(
+    input.systemPrompt,
+    input.userIntent,
+    input.attachments,
+  )
   const toolDefinitions: ToolDefinition[] = ALL_TOOLS
   const registryError = validateToolRegistry(ALL_TOOLS)
   if (registryError) {
@@ -318,10 +334,54 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
   }
 }
 
-const createInitialHistory = (systemPrompt: string, userIntent: string): Message[] => {
+const createInitialHistory = async (
+  systemPrompt: string,
+  userIntent: string,
+  attachments?: string[],
+): Promise<Message[]> => {
+  if (!attachments || attachments.length === 0) {
+    return [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userIntent },
+    ]
+  }
+
+  const parts: Array<TextPart | ImagePart | PdfPart> = []
+
+  for (const attachment of attachments) {
+    const ext = path.extname(attachment).toLowerCase()
+    if (ext === '.pdf') {
+      const pdfPart: PdfPart = {
+        type: 'pdf',
+        mimeType: 'application/pdf',
+        filePath: attachment,
+      }
+      parts.push(pdfPart)
+      continue
+    }
+
+    if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') {
+      const data = await fs.readFile(attachment)
+      const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+      const imagePart: ImagePart = {
+        type: 'image',
+        mimeType,
+        data: data.toString('base64'),
+      }
+      parts.push(imagePart)
+      continue
+    }
+
+    const text = await fs.readFile(attachment, 'utf8')
+    const fileName = path.basename(attachment)
+    parts.push({ type: 'text', text: `File: ${fileName}\n\n${text}` })
+  }
+
+  parts.push({ type: 'text', text: userIntent })
+
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: userIntent },
+    { role: 'user', content: parts },
   ]
 }
 
