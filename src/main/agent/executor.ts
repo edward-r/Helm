@@ -9,21 +9,24 @@ import type {
   TextPart,
   ToolCall,
   ToolDefinition,
+  VideoPart
 } from '@prompt-maker/core'
 import { callLLM } from '@prompt-maker/core'
 
+import { uploadToGemini } from '../core/lib/llm/providers/gemini-files'
+import { isGeminiModelId } from '../model-providers'
 import type { AgentTool } from './tools/tool-types'
 import { ALL_TOOLS } from './tools'
 import type { ThinkingEvent, ToolErrorEvent, ToolSuccessEvent } from '../../shared/agent-events'
 import {
   parseToolCallsFromResult,
   type ToolCallParseError,
-  type ToolCallSource,
+  type ToolCallSource
 } from './tool-call-parser'
 import {
   buildToolExecutionPlan,
   type ToolExecutionPlan,
-  type ToolPlanError,
+  type ToolPlanError
 } from './tool-execution-plan'
 import {
   buildToolExecutionEnvelope,
@@ -31,7 +34,7 @@ import {
   type ToolExecutionEnvelope,
   type ToolExecutionError,
   type ToolExecutionIo,
-  summarizeToolExecution,
+  summarizeToolExecution
 } from './tool-execution-result'
 
 export type ExecutorInput = {
@@ -106,12 +109,21 @@ export type NormalizedLLMResponse =
 
 const DEFAULT_MAX_ITERATIONS = 20
 const BEST_KNOWN_TEXT_MAX = 240
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.webm', '.mkv'])
+const VIDEO_MIME_TYPES: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska'
+}
 
 export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
   const history = await createInitialHistory(
     input.systemPrompt,
     input.userIntent,
-    input.attachments,
+    input.model,
+    input.attachments
   )
   const toolDefinitions: ToolDefinition[] = ALL_TOOLS
   const registryError = validateToolRegistry(ALL_TOOLS)
@@ -128,7 +140,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
     return { ok: false, error: executorRegistryError, messages: history }
   }
   const toolMap = new Map<string, AgentTool>(
-    toolExecutors.map((tool: AgentTool) => [tool.name, tool]),
+    toolExecutors.map((tool: AgentTool) => [tool.name, tool])
   )
   const maxIterations = input.maxIterations ?? DEFAULT_MAX_ITERATIONS
 
@@ -143,7 +155,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       callIndex,
       iteration: callIndex,
       model: input.model,
-      summary: 'Calling model…',
+      summary: 'Calling model…'
     })
     const startedAt = Date.now()
     let response: LLMResult
@@ -159,16 +171,16 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         model: input.model,
         result: 'error',
         durationMs: Date.now() - startedAt,
-        summary: `Model call failed: ${errorMessage}`,
+        summary: `Model call failed: ${errorMessage}`
       })
       return {
         ok: false,
         error: {
           code: 'LLM_CALL_FAILED',
           message: 'Model call failed.',
-          details: { callIndex, errorMessage },
+          details: { callIndex, errorMessage }
         },
-        messages: currentHistory,
+        messages: currentHistory
       }
     }
 
@@ -181,7 +193,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
 
     emitThinkingEvent(
       input.onThinkingEvent,
-      buildThinkingEndEvent(normalized, callIndex, input.model, startedAt),
+      buildThinkingEndEvent(normalized, callIndex, input.model, startedAt)
     )
 
     // Plain-text finalization: when no tool calls are present, return the
@@ -194,8 +206,8 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         value: {
           text: normalized.text,
           messages: finalHistory,
-          ...(lastPlans ? { toolPlans: lastPlans } : {}),
-        },
+          ...(lastPlans ? { toolPlans: lastPlans } : {})
+        }
       }
     }
 
@@ -207,16 +219,16 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         model: input.model,
         result: 'error',
         errorCode: 'LLM_RESPONSE_INVALID',
-        summary: normalized.message,
+        summary: normalized.message
       })
       return {
         ok: false,
         error: {
           code: 'LLM_RESPONSE_INVALID',
           message: normalized.message,
-          details: { callIndex },
+          details: { callIndex }
         },
-        messages: currentHistory,
+        messages: currentHistory
       }
     }
 
@@ -228,7 +240,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         model: input.model,
         result: 'error',
         errorCode: normalized.error.code,
-        summary: normalized.error.message,
+        summary: normalized.error.message
       })
       return {
         ok: false,
@@ -238,10 +250,10 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
           details: {
             callIndex,
             parseCode: normalized.error.code,
-            ...(normalized.source ? { source: normalized.source } : {}),
-          },
+            ...(normalized.source ? { source: normalized.source } : {})
+          }
         },
-        messages: currentHistory,
+        messages: currentHistory
       }
     }
 
@@ -254,12 +266,12 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         model: input.model,
         result: 'error',
         errorCode: validation.error.code,
-        summary: validation.error.message,
+        summary: validation.error.message
       })
       return {
         ok: false,
         error: validation.error,
-        messages: currentHistory,
+        messages: currentHistory
       }
     }
 
@@ -270,7 +282,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       model: input.model,
       result: 'tool_calls',
       toolNames: Array.from(new Set(validation.value.map((call: ToolCall) => call.name))),
-      summary: 'Tool calls detected.',
+      summary: 'Tool calls detected.'
     })
 
     const plansResult = buildExecutionPlans(validation.value, toolMap)
@@ -282,12 +294,12 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
         model: input.model,
         result: 'error',
         errorCode: plansResult.error.code,
-        summary: plansResult.error.message,
+        summary: plansResult.error.message
       })
       return {
         ok: false,
         error: plansResult.error,
-        messages: currentHistory,
+        messages: currentHistory
       }
     }
 
@@ -301,7 +313,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       model: input.model,
       result: 'tool_calls',
       toolNames: Array.from(new Set(plans.map((plan) => plan.toolName))),
-      summary: 'Tool execution plan prepared.',
+      summary: 'Tool execution plan prepared.'
     })
 
     const assistantMessage = buildAssistantMessage('', validation.value)
@@ -311,7 +323,7 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       plans,
       input.onToolApproval,
       input.onToolEvent,
-      callIndex,
+      callIndex
     )
     currentHistory = appendMessages(currentHistory, assistantMessage, ...toolMessages)
   }
@@ -326,35 +338,52 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       message: `Executor exceeded maxIterations (${maxIterations}) without final response.`,
       details: {
         maxIterations,
-        ...(bestKnownText ? { bestKnownText } : {}),
-      },
+        ...(bestKnownText ? { bestKnownText } : {})
+      }
     },
     messages: currentHistory,
-    ...(lastPlans ? { toolPlans: lastPlans } : {}),
+    ...(lastPlans ? { toolPlans: lastPlans } : {})
   }
 }
 
 const createInitialHistory = async (
   systemPrompt: string,
   userIntent: string,
-  attachments?: string[],
+  model: string,
+  attachments?: string[]
 ): Promise<Message[]> => {
   if (!attachments || attachments.length === 0) {
     return [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userIntent },
+      { role: 'user', content: userIntent }
     ]
   }
 
-  const parts: Array<TextPart | ImagePart | PdfPart> = []
+  const parts: Array<TextPart | ImagePart | PdfPart | VideoPart> = []
 
   for (const attachment of attachments) {
     const ext = path.extname(attachment).toLowerCase()
+    if (VIDEO_EXTENSIONS.has(ext)) {
+      if (!isGeminiModelId(model)) {
+        throw new Error('Native video attachments are currently only supported with Gemini models.')
+      }
+      const mimeType = VIDEO_MIME_TYPES[ext] ?? 'video/mp4'
+      const fileUri = await uploadToGemini(attachment, mimeType)
+      parts.push({ type: 'video_uri', mimeType, fileUri })
+      continue
+    }
     if (ext === '.pdf') {
+      if (!isGeminiModelId(model)) {
+        throw new Error(
+          'Native PDF attachments are currently only supported with Gemini models. Please select a Gemini model or convert the PDF to text.'
+        )
+      }
+      const fileUri = await uploadToGemini(attachment, 'application/pdf')
       const pdfPart: PdfPart = {
         type: 'pdf',
         mimeType: 'application/pdf',
         filePath: attachment,
+        fileUri
       }
       parts.push(pdfPart)
       continue
@@ -366,7 +395,7 @@ const createInitialHistory = async (
       const imagePart: ImagePart = {
         type: 'image',
         mimeType,
-        data: data.toString('base64'),
+        data: data.toString('base64')
       }
       parts.push(imagePart)
       continue
@@ -381,14 +410,14 @@ const createInitialHistory = async (
 
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: parts },
+    { role: 'user', content: parts }
   ]
 }
 
 const buildAssistantMessage = (content: string | null, toolCalls?: ToolCall[]): Message => {
   const message: Message = {
     role: 'assistant',
-    content: content ?? '',
+    content: content ?? ''
   }
 
   if (toolCalls && toolCalls.length > 0) {
@@ -404,7 +433,7 @@ const buildToolMessages = async (
   plans: ToolExecutionPlan[],
   onToolApproval?: ExecutorInput['onToolApproval'],
   onToolEvent?: ExecutorInput['onToolEvent'],
-  iteration?: number,
+  iteration?: number
 ): Promise<Message[]> => {
   const messages: Message[] = []
 
@@ -422,7 +451,7 @@ const buildToolMessages = async (
     messages.push({
       role: 'tool',
       toolCallId,
-      content: serializeToolExecutionEnvelope(toolResult),
+      content: serializeToolExecutionEnvelope(toolResult)
     })
   }
 
@@ -432,7 +461,7 @@ const buildToolMessages = async (
 const resolveToolApproval = async (
   call: ToolCall,
   plan: ToolExecutionPlan | undefined,
-  onToolApproval?: ExecutorInput['onToolApproval'],
+  onToolApproval?: ExecutorInput['onToolApproval']
 ): Promise<ToolApprovalDecision> => {
   if (!plan || plan.risk !== 'dangerous') {
     return { approved: true }
@@ -441,7 +470,7 @@ const resolveToolApproval = async (
   if (!onToolApproval) {
     return {
       approved: false,
-      reason: 'Tool approval required but no confirmation handler is available.',
+      reason: 'Tool approval required but no confirmation handler is available.'
     }
   }
 
@@ -461,16 +490,16 @@ const buildDeniedToolResult = (call: ToolCall, reason?: string): ToolExecutionEn
       message: reason ?? `Tool "${call.name}" was denied before execution.`,
       details: {
         toolName: call.name,
-        ...(call.id ? { toolCallId: call.id } : {}),
-      },
+        ...(call.id ? { toolCallId: call.id } : {})
+      }
     },
-    durationMs: 0,
+    durationMs: 0
   })
 }
 
 const executeToolCall = async (
   call: ToolCall,
-  toolMap: Map<string, AgentTool>,
+  toolMap: Map<string, AgentTool>
 ): Promise<ToolExecutionEnvelope> => {
   const tool = toolMap.get(call.name)
   if (!tool) {
@@ -478,9 +507,9 @@ const executeToolCall = async (
       call,
       error: {
         code: 'TOOL_NOT_FOUND',
-        message: `Tool "${call.name}" is not registered.`,
+        message: `Tool "${call.name}" is not registered.`
       },
-      durationMs: 0,
+      durationMs: 0
     })
   }
 
@@ -491,7 +520,7 @@ const executeToolCall = async (
     return buildToolExecutionEnvelope({
       call,
       output,
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - startedAt
     })
   } catch (error) {
     const io = extractIoFromError(error)
@@ -499,7 +528,7 @@ const executeToolCall = async (
       call,
       error: buildExecutionError(error, io),
       io,
-      durationMs: Date.now() - startedAt,
+      durationMs: Date.now() - startedAt
     })
   }
 }
@@ -513,7 +542,7 @@ const extractIoFromError = (error: unknown): ToolExecutionIo => {
     ...(typeof error.stderr === 'string' ? { stderr: error.stderr } : {}),
     ...(typeof error.exitCode === 'number' && Number.isFinite(error.exitCode)
       ? { exitCode: error.exitCode }
-      : {}),
+      : {})
   }
 }
 
@@ -530,12 +559,12 @@ const buildExecutionError = (error: unknown, io: ToolExecutionIo): ToolExecution
     return {
       code: 'TOOL_EXECUTION_FAILED',
       message,
-      details,
+      details
     }
   }
   return {
     code: 'TOOL_EXECUTION_FAILED',
-    message,
+    message
   }
 }
 
@@ -547,7 +576,7 @@ type ThinkingPayload = Omit<ThinkingEvent, 'event'>
 
 const emitThinkingEvent = (
   handler: ExecutorInput['onThinkingEvent'],
-  payload: ThinkingPayload,
+  payload: ThinkingPayload
 ): void => {
   if (!handler) {
     return
@@ -559,7 +588,7 @@ const emitToolEvent = (
   handler: ExecutorInput['onToolEvent'],
   envelope: ToolExecutionEnvelope,
   toolCallId: string,
-  iteration?: number,
+  iteration?: number
 ): void => {
   if (!handler) {
     return
@@ -574,7 +603,7 @@ const emitToolEvent = (
       toolCallId,
       durationMs,
       summary,
-      ...(iteration !== undefined ? { iteration } : {}),
+      ...(iteration !== undefined ? { iteration } : {})
     })
     return
   }
@@ -589,7 +618,7 @@ const emitToolEvent = (
     summary,
     errorMessage,
     ...(errorCode ? { errorCode } : {}),
-    ...(iteration !== undefined ? { iteration } : {}),
+    ...(iteration !== undefined ? { iteration } : {})
   })
 }
 
@@ -597,7 +626,7 @@ const buildThinkingEndEvent = (
   normalized: NormalizedLLMResponse,
   callIndex: number,
   model: string,
-  startedAt: number,
+  startedAt: number
 ): ThinkingPayload => {
   const durationMs = Date.now() - startedAt
   if (normalized.kind === 'finalText') {
@@ -608,7 +637,7 @@ const buildThinkingEndEvent = (
       model,
       result: 'final_text',
       durationMs,
-      summary: 'Model response received.',
+      summary: 'Model response received.'
     }
   }
 
@@ -625,7 +654,7 @@ const buildThinkingEndEvent = (
       summary:
         toolNames.length > 0
           ? `Tool calls requested: ${toolNames.join(', ')}`
-          : 'Tool calls requested.',
+          : 'Tool calls requested.'
     }
   }
 
@@ -636,7 +665,7 @@ const buildThinkingEndEvent = (
     model,
     result: 'error',
     durationMs,
-    summary: 'Model response invalid.',
+    summary: 'Model response invalid.'
   }
 }
 
@@ -656,8 +685,8 @@ const resolveToolExecutors = (tools?: AgentTool[]): ToolRegistryResult => {
       ok: false,
       error: {
         code: 'TOOL_REGISTRY_INVALID',
-        message: 'Executor tools must match ALL_TOOLS registry.',
-      },
+        message: 'Executor tools must match ALL_TOOLS registry.'
+      }
     }
   }
 
@@ -671,20 +700,20 @@ export const validateToolRegistry = (tools: AgentTool[]): ExecutorError | null =
     if (!tool) {
       return {
         code: 'TOOL_REGISTRY_INVALID',
-        message: `Tool at index ${index} is missing.`,
+        message: `Tool at index ${index} is missing.`
       }
     }
     const name = tool.name.trim()
     if (!name) {
       return {
         code: 'TOOL_REGISTRY_INVALID',
-        message: `Tool at index ${index} is missing a name.`,
+        message: `Tool at index ${index} is missing a name.`
       }
     }
     if (seen.has(name)) {
       return {
         code: 'TOOL_REGISTRY_INVALID',
-        message: `Tool name "${name}" is duplicated in registry.`,
+        message: `Tool name "${name}" is duplicated in registry.`
       }
     }
     seen.add(name)
@@ -692,14 +721,14 @@ export const validateToolRegistry = (tools: AgentTool[]): ExecutorError | null =
     if (!tool.description || !tool.description.trim()) {
       return {
         code: 'TOOL_REGISTRY_INVALID',
-        message: `Tool "${name}" is missing a description.`,
+        message: `Tool "${name}" is missing a description.`
       }
     }
 
     if (!isRecord(tool.inputSchema)) {
       return {
         code: 'TOOL_REGISTRY_INVALID',
-        message: `Tool "${name}" inputSchema must be an object.`,
+        message: `Tool "${name}" inputSchema must be an object.`
       }
     }
   }
@@ -741,7 +770,7 @@ const truncateBestKnownText = (value: string): string => {
 
 const validateToolCalls = (
   toolCalls: ToolCall[],
-  toolMap: Map<string, AgentTool>,
+  toolMap: Map<string, AgentTool>
 ): { ok: true; value: ToolCall[] } | { ok: false; error: ExecutorError } => {
   const normalized: ToolCall[] = []
 
@@ -754,8 +783,8 @@ const validateToolCalls = (
         error: {
           code: 'TOOL_CALL_VALIDATION_ERROR',
           message: 'Tool call is missing a name.',
-          details: { callIndex: index + 1 },
-        },
+          details: { callIndex: index + 1 }
+        }
       }
     }
 
@@ -766,8 +795,8 @@ const validateToolCalls = (
         error: {
           code: 'TOOL_CALL_VALIDATION_ERROR',
           message: `Tool call references unknown tool "${name}".`,
-          details: { toolName: name, callIndex: index + 1 },
-        },
+          details: { toolName: name, callIndex: index + 1 }
+        }
       }
     }
 
@@ -782,15 +811,15 @@ const validateToolCalls = (
         error: {
           code: 'TOOL_CALL_VALIDATION_ERROR',
           message: `Tool call arguments for "${name}" must be an object to match schema.`,
-          details: { toolName: name, callIndex: index + 1 },
-        },
+          details: { toolName: name, callIndex: index + 1 }
+        }
       }
     }
 
     normalized.push({
       id: call?.id ?? `tool_call_${index + 1}`,
       name,
-      arguments: normalizedArgs.value,
+      arguments: normalizedArgs.value
     })
   }
 
@@ -799,7 +828,7 @@ const validateToolCalls = (
 
 const normalizeToolArguments = (
   value: unknown,
-  toolName: string,
+  toolName: string
 ): { ok: true; value: unknown } | { ok: false; error: ExecutorError } => {
   if (value === undefined) {
     return { ok: true, value: {} }
@@ -814,8 +843,8 @@ const normalizeToolArguments = (
         error: {
           code: 'TOOL_CALL_VALIDATION_ERROR',
           message: `Tool call arguments for "${toolName}" must be valid JSON.`,
-          details: { toolName },
-        },
+          details: { toolName }
+        }
       }
     }
   }
@@ -825,7 +854,7 @@ const normalizeToolArguments = (
 
 const buildExecutionPlans = (
   toolCalls: ToolCall[],
-  toolMap: Map<string, AgentTool>,
+  toolMap: Map<string, AgentTool>
 ): { ok: true; value: ToolExecutionPlan[] } | { ok: false; error: ExecutorError } => {
   const plans: ToolExecutionPlan[] = []
 
@@ -837,8 +866,8 @@ const buildExecutionPlans = (
         error: {
           code: 'TOOL_PLAN_ERROR',
           message: `Tool "${call.name}" is not registered for planning.`,
-          details: { toolName: call.name },
-        },
+          details: { toolName: call.name }
+        }
       }
     }
     const plan = buildToolExecutionPlan(call, tool)
@@ -848,8 +877,8 @@ const buildExecutionPlans = (
         error: {
           code: 'TOOL_PLAN_ERROR',
           message: plan.error.message,
-          details: { toolName: call.name, planCode: plan.error.code },
-        },
+          details: { toolName: call.name, planCode: plan.error.code }
+        }
       }
     }
     plans.push(plan.value)
