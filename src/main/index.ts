@@ -6,6 +6,7 @@ import { createIPCHandler } from 'electron-trpc/main'
 import { createAppRouter } from '../shared/trpc'
 import type { AppRouter, ExecutorRunInput, ExecutorStreamEvent } from '../shared/trpc'
 import { executeExecutor, type ExecutorInput } from './agent/executor'
+import { evaluatePrompt } from './agent/validator'
 import icon from '../../resources/icon.png?asset'
 
 let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null
@@ -89,6 +90,7 @@ const streamExecutor = async (
 const appRouter = createAppRouter({
   runExecutor,
   streamExecutor,
+  validatePrompt: async ({ promptText, model }) => evaluatePrompt(promptText, model),
   selectFiles: async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections']

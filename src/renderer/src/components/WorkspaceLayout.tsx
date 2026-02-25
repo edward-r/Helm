@@ -1,8 +1,10 @@
 import { useAgentStore } from '../store/useAgentStore'
 import InputPanel from './InputPanel'
 import MessageBubble from './MessageBubble'
+import TestPlayground from './TestPlayground'
 import TimelineFeed from './TimelineFeed'
 import ToolApprovalModal from './ToolApprovalModal'
+import ValidationCard from './ValidationCard'
 
 const WorkspaceLayout = () => {
   const isStreaming = useAgentStore((state) => state.isStreaming)
@@ -49,11 +51,13 @@ const WorkspaceLayout = () => {
         <div className="workspace-feed">
           <TimelineFeed />
           {finalResult ? <MessageBubble result={finalResult} /> : null}
+          <ValidationCard />
           {streamError ? <div className="error-banner">{streamError}</div> : null}
         </div>
         <InputPanel />
       </main>
       <ToolApprovalModal />
+      <TestPlayground />
     </div>
   )
 }

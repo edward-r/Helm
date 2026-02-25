@@ -6,6 +6,7 @@ import type {
   ExecutorRunInput,
   ExecutorStreamEvent,
   Message,
+  ValidationReport,
   ToolExecutionPlan
 } from '../../../shared/trpc'
 
@@ -21,6 +22,8 @@ type AgentState = {
   chatHistory: Message[]
   events: ExecutorStreamEvent[]
   finalResult: ExecutorResult | null
+  validationReport: ValidationReport | null
+  isValidating: boolean
   streamError: string | null
   isStreaming: boolean
   pendingApproval: { callId: string; toolName: string; plan: ToolExecutionPlan } | null
@@ -34,6 +37,7 @@ type AgentState = {
   clearAttachments: () => void
   clearRun: () => void
   clearHistory: () => void
+  runValidation: (text: string) => Promise<void>
   executeIntent: () => void
   stopExecution: () => void
   submitApproval: (approved: boolean) => Promise<void>
@@ -71,6 +75,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   chatHistory: [],
   events: [],
   finalResult: null,
+  validationReport: null,
+  isValidating: false,
   streamError: null,
   isStreaming: false,
   pendingApproval: null,
@@ -103,8 +109,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({
       chatHistory: [],
       userIntent: DEFAULT_USER_INTENT,
-      finalResult: null
+      finalResult: null,
+      validationReport: null,
+      isValidating: false
     }),
+  runValidation: async (text) => {
+    set({ isValidating: true })
+    try {
+      const report = await trpcClient.validatePrompt.mutate({
+        promptText: text,
+        model: get().model
+      })
+      set({ validationReport: report, isValidating: false })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Validation failed.'
+      console.error(message)
+      set({ validationReport: null, isValidating: false })
+    }
+  },
   executeIntent: () => {
     const {
       systemPrompt,
@@ -130,6 +152,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({
       events: [],
       finalResult: null,
+      validationReport: null,
       streamError: null,
       isStreaming: true,
       pendingApproval: null
@@ -151,29 +174,33 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     activeSubscription = trpcClient.executorStream.subscribe(input, {
       onData: (event) => {
+        const streamEvent = event as ExecutorStreamEvent
+        if (streamEvent.event === 'executor.complete' && streamEvent.result.ok) {
+          void get().runValidation(streamEvent.result.value.text)
+        }
         set((state) => {
-          const nextEvents = [...state.events, event]
+          const nextEvents = [...state.events, streamEvent]
           const nextState: Partial<AgentState> = { events: nextEvents }
 
-          if (event.event === 'executor.complete') {
-            if (event.result.ok) {
+          if (streamEvent.event === 'executor.complete') {
+            if (streamEvent.result.ok) {
               const userMessage: Message = { role: 'user', content: intentForRun }
               const assistantMessage: Message = {
                 role: 'assistant',
-                content: event.result.value.text
+                content: streamEvent.result.value.text
               }
               nextState.chatHistory = [...state.chatHistory, userMessage, assistantMessage]
             }
-            nextState.finalResult = event.result
+            nextState.finalResult = streamEvent.result
             nextState.isStreaming = false
             nextState.pendingApproval = null
           }
 
-          if (event.event === 'tool_approval_required') {
+          if (streamEvent.event === 'tool_approval_required') {
             nextState.pendingApproval = {
-              callId: event.callId,
-              toolName: event.toolName,
-              plan: event.plan
+              callId: streamEvent.callId,
+              toolName: streamEvent.toolName,
+              plan: streamEvent.plan
             }
           }
 

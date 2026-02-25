@@ -1,7 +1,9 @@
+import { useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { ExecutorResult } from '../../../shared/trpc'
+import { useTestStore } from '../store/useTestStore'
 
 type MessageBubbleProps = {
   result: ExecutorResult
@@ -26,6 +28,35 @@ const MessageBubble = ({ result }: MessageBubbleProps) => {
   const meta = resolveMessageMeta(result)
   const statusClass = result.ok ? 'is-success' : 'is-error'
   const title = result.ok ? 'Assistant' : 'Execution Error'
+  const promptText = result.ok ? result.value.text : ''
+
+  const handleCopy = useCallback(() => {
+    if (!promptText) {
+      return
+    }
+    void navigator.clipboard?.writeText(promptText)
+  }, [promptText])
+
+  const handleExport = useCallback(() => {
+    if (!promptText) {
+      return
+    }
+    const blob = new Blob([promptText], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    link.href = url
+    link.download = `prompt-${timestamp}.md`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [promptText])
+
+  const handleTest = useCallback(() => {
+    if (!promptText) {
+      return
+    }
+    useTestStore.getState().openPlayground(promptText)
+  }, [promptText])
 
   return (
     <div className={`message-bubble ${statusClass}`}>
@@ -33,10 +64,21 @@ const MessageBubble = ({ result }: MessageBubbleProps) => {
         {title}
         {meta ? <span className="message-meta">{meta}</span> : null}
       </div>
+      {result.ok ? (
+        <div className="message-actions">
+          <button type="button" className="button is-secondary" onClick={handleCopy}>
+            Copy
+          </button>
+          <button type="button" className="button is-secondary" onClick={handleExport}>
+            Export
+          </button>
+          <button type="button" className="button is-primary" onClick={handleTest}>
+            Test Prompt
+          </button>
+        </div>
+      ) : null}
       <div className="message-body markdown-body">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {body}
-        </ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
       </div>
     </div>
   )
