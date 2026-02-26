@@ -6,7 +6,7 @@ import type {
   Message,
   ToolCall,
   ToolCallRequest,
-  ToolDefinition,
+  ToolDefinition
 } from '../types'
 import { toGeminiParts, type GeminiContentPart } from '../message-adapters'
 
@@ -50,32 +50,32 @@ const GeminiResponseSchema = z.object({
                     inlineData: z
                       .object({
                         mimeType: z.string(),
-                        data: z.string(),
+                        data: z.string()
                       })
                       .optional(),
                     fileData: z
                       .object({
                         mimeType: z.string(),
-                        fileUri: z.string(),
+                        fileUri: z.string()
                       })
                       .optional(),
                     functionCall: z
                       .object({
                         name: z.string().optional(),
-                        args: z.unknown().optional(),
+                        args: z.unknown().optional()
                       })
                       .passthrough()
-                      .optional(),
+                      .optional()
                   })
-                  .passthrough(),
+                  .passthrough()
               )
-              .optional(),
+              .optional()
           })
           .optional(),
-        finishReason: z.string().optional(),
-      }),
+        finishReason: z.string().optional()
+      })
     )
-    .optional(),
+    .optional()
 })
 
 type GeminiResponse = z.infer<typeof GeminiResponseSchema>
@@ -90,9 +90,9 @@ type GeminiRequestBody = {
 const GeminiEmbeddingResponseSchema = z.object({
   embedding: z
     .object({
-      value: z.array(z.number()).optional(),
+      value: z.array(z.number()).optional()
     })
-    .optional(),
+    .optional()
 })
 
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com'
@@ -119,10 +119,15 @@ export const normalizeGeminiApiVersion = (value: string): GeminiApiVersion => {
 const GEMINI_API_VERSION = process.env.GEMINI_API_VERSION?.trim() || 'v1beta'
 const GEMINI_API_VERSION_NORMALIZED = normalizeGeminiApiVersion(GEMINI_API_VERSION)
 
+const normalizeGeminiModelId = (value: string): string => {
+  const trimmed = value.trim()
+  return trimmed.replace(/^models\//i, '').replace(/^model\//i, '')
+}
+
 const parseJsonWithSchema = async <T>(
   response: Response,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  label: string,
+  label: string
 ): Promise<T> => {
   const payload = (await response.json()) as unknown
   const parsed = schema.safeParse(payload)
@@ -146,19 +151,20 @@ const callGeminiOnce = async (
   model: string,
   apiKey: string,
   apiVersion: GeminiApiVersion,
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): Promise<GeminiCallResult> => {
   const endpointBase = GEMINI_BASE_URL
   const normalizedVersion = normalizeGeminiApiVersion(apiVersion)
-  const url = `${endpointBase}/${normalizedVersion}/models/${model}:generateContent?key=${apiKey}`
+  const modelId = normalizeGeminiModelId(model)
+  const url = `${endpointBase}/${normalizedVersion}/models/${modelId}:generateContent?key=${apiKey}`
   const body = buildGeminiRequestBody(messages, tools)
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   })
 
   if (!response.ok) {
@@ -182,27 +188,19 @@ const callGeminiOnce = async (
     ok: true,
     result: {
       content: content ?? null,
-      ...(toolCalls.length > 0 ? { toolCalls } : {}),
-    },
+      ...(toolCalls.length > 0 ? { toolCalls } : {})
+    }
   }
 }
 
-const messageHasGeminiFileParts = (content: Message['content']): boolean => {
-  return typeof content !== 'string' && content.some((part) => 'fileUri' in part)
-}
-
-const requestHasGeminiFileParts = (messages: Message[]): boolean => {
-  return messages.some((message) => messageHasGeminiFileParts(message.content))
-}
-
-const shouldRetryGeminiApiVersion = (status: number): boolean => {
-  return status === 404
+const shouldRetryGeminiApiVersion = (): boolean => {
+  return false
 }
 
 export const callGemini = async (
   messages: Message[],
   model: string,
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): Promise<LLMResult> => {
   const apiKey = process.env.GEMINI_API_KEY
 
@@ -210,17 +208,14 @@ export const callGemini = async (
     throw new Error('GEMINI_API_KEY env var is not set.')
   }
 
-  const wantsFileParts = requestHasGeminiFileParts(messages)
-  const envVersion = GEMINI_API_VERSION_NORMALIZED
-
-  const primaryVersion: GeminiApiVersion = wantsFileParts ? 'v1beta' : envVersion
+  const primaryVersion: GeminiApiVersion = 'v1beta'
 
   const primary = await callGeminiOnce(messages, model, apiKey, primaryVersion, tools)
   if (primary.ok) {
     return primary.result
   }
 
-  if (shouldRetryGeminiApiVersion(primary.status)) {
+  if (shouldRetryGeminiApiVersion()) {
     const fallbackVersion: GeminiApiVersion = primaryVersion === 'v1beta' ? 'v1' : 'v1beta'
     const fallback = await callGeminiOnce(messages, model, apiKey, fallbackVersion, tools)
     if (fallback.ok) {
@@ -229,18 +224,18 @@ export const callGemini = async (
 
     throw new Error(
       `Gemini (${fallback.apiVersion}) request failed with status ${fallback.status}: ${fallback.details}\n` +
-        `Tried ${primary.apiVersion} first: ${primary.details}`,
+        `Tried ${primary.apiVersion} first: ${primary.details}`
     )
   }
 
   throw new Error(
-    `Gemini (${primary.apiVersion}) request failed with status ${primary.status}: ${primary.details}`,
+    `Gemini (${primary.apiVersion}) request failed with status ${primary.status}: ${primary.details}`
   )
 }
 
 const buildGeminiRequestBody = (
   messages: Message[],
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): GeminiRequestBody => {
   const systemMessages = messages.filter((message) => message.role === 'system')
 
@@ -255,7 +250,7 @@ const buildGeminiRequestBody = (
 
   const payload: GeminiRequestBody = {
     contents,
-    generationConfig: { temperature: 0.2 },
+    generationConfig: { temperature: 0.2 }
   }
 
   const geminiTools = toGeminiTools(tools)
@@ -268,7 +263,7 @@ const buildGeminiRequestBody = (
   if (systemParts.length > 0) {
     payload.systemInstruction = {
       role: 'system',
-      parts: systemParts,
+      parts: systemParts
     }
   }
 
@@ -288,7 +283,7 @@ const extractGeminiText = (response: GeminiResponse): string | null => {
 
 const toGeminiContent = (
   message: Message,
-  toolCallNameById: Map<string, string>,
+  toolCallNameById: Map<string, string>
 ): GeminiContent => {
   if (message.role === 'tool') {
     const toolCallId = resolveToolCallIdForToolMessage(message)
@@ -299,10 +294,10 @@ const toGeminiContent = (
         {
           functionResponse: {
             name: toolName,
-            response: buildGeminiToolResponsePayload(message.content, toolCallId),
-          },
-        },
-      ],
+            response: buildGeminiToolResponsePayload(message.content, toolCallId)
+          }
+        }
+      ]
     }
   }
 
@@ -313,13 +308,13 @@ const toGeminiContent = (
   }
   return {
     role,
-    parts,
+    parts
   }
 }
 
 const buildGeminiToolResponsePayload = (
   content: Message['content'],
-  toolCallId: string,
+  toolCallId: string
 ): Record<string, unknown> => {
   const textContent = serializeGeminiToolResponseContent(content)
 
@@ -356,7 +351,7 @@ const resolveToolCallIdForToolMessage = (message: Message): string => {
 
 const resolveGeminiToolNameForToolCall = (
   toolCallId: string,
-  toolCallNameById: Map<string, string>,
+  toolCallNameById: Map<string, string>
 ): string => {
   const mapped = toolCallNameById.get(toolCallId)
   if (mapped) {
@@ -370,7 +365,7 @@ const resolveGeminiToolNameForToolCall = (
 
   throw new Error(
     `Gemini tool messages require a tool name for toolCallId "${toolCallId}". ` +
-      'Provide matching toolCalls or use gemini_<name>_<index> ids.',
+      'Provide matching toolCalls or use gemini_<name>_<index> ids.'
   )
 }
 
@@ -455,7 +450,7 @@ const extractGeminiToolCalls = (response: GeminiResponse): ToolCall[] => {
     toolCalls.push({
       id,
       name: functionCall.name,
-      arguments: parseGeminiArguments(functionCall.args),
+      arguments: parseGeminiArguments(functionCall.args)
     })
   }
 
@@ -474,9 +469,9 @@ const toGeminiTools = (tools: ToolDefinition[] | undefined): GeminiTool[] | null
       functionDeclarations: tools.map((tool) => ({
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
-        parameters: resolveGeminiToolParameters(tool.inputSchema),
-      })),
-    },
+        parameters: resolveGeminiToolParameters(tool.inputSchema)
+      }))
+    }
   ]
 }
 
@@ -494,16 +489,33 @@ const resolveGeminiToolParameters = (inputSchema: JsonSchema | undefined): JsonS
 }
 
 const sanitizeGeminiSchema = (schema: JsonSchema): JsonSchema => {
+  if (typeof schema !== 'object' || schema === null) {
+    return schema
+  }
+
   const {
     additionalProperties: _additionalProperties,
+    $schema: _$schema,
+    default: _default,
     properties,
     items,
     anyOf,
     oneOf,
     allOf,
+    enum: enumValue,
+    required,
     ...rest
-  } = schema
+  } = schema as JsonSchema & { $schema?: unknown; default?: unknown }
+
   const next: JsonSchema = { ...rest }
+
+  if (Array.isArray(required) && required.length > 0) {
+    next.required = required
+  }
+
+  if (Array.isArray(enumValue)) {
+    next.enum = enumValue.map((entry) => (typeof entry === 'number' ? String(entry) : entry))
+  }
 
   if (properties) {
     const nextProperties: Record<string, JsonSchema> = {}
@@ -580,16 +592,16 @@ export const callGeminiEmbedding = async (text: string, model: string): Promise<
   const url = `${endpointBase}/${GEMINI_API_VERSION_NORMALIZED}/models/${model}:embedContent?key=${apiKey}`
   const body = {
     content: {
-      parts: [{ text }],
-    },
+      parts: [{ text }]
+    }
   }
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   })
 
   if (!response.ok) {

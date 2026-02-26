@@ -5,6 +5,7 @@ import type { ModelInfo } from '../../../shared/trpc'
 import { useAgentStore } from '../store/useAgentStore'
 import { useAppStore } from '../store/useAppStore'
 import AutomationWorkspace from './AutomationWorkspace'
+import FocusEditorModal from './FocusEditorModal'
 import InputPanel from './InputPanel'
 import MessageBubble from './MessageBubble'
 import ResearchWorkspace from './ResearchWorkspace'
@@ -129,6 +130,9 @@ const ModelSelector = () => {
       }
       if (item.toolCall !== undefined) {
         details.push(`tools: ${item.toolCall ? 'yes' : 'no'}`)
+      }
+      if (item.reasoning) {
+        details.push('reasoning')
       }
       if (item.inputModalities && item.inputModalities.length > 0) {
         details.push(`input: ${item.inputModalities.join(', ')}`)
@@ -339,6 +343,7 @@ const WorkspaceLayout = () => {
       <ToolApprovalModal />
       <TestPlayground />
       <SettingsModal />
+      <FocusEditorModal />
     </div>
   )
 }

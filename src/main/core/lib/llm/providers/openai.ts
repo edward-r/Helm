@@ -4,8 +4,6 @@ import type { JsonSchema, LLMResult, Message, ToolCall, ToolDefinition } from '.
 import type { OpenAIChatCompletionMessage, OpenAIResponsesInputMessage } from '../message-adapters'
 import { toOpenAIMessageAsync, toOpenAIResponsesInputMessageAsync } from '../message-adapters'
 
-type OpenAIResponseContentPart = { type: 'text'; text: string }
-
 const OpenAIToolCallSchema = z
   .object({
     id: z.string().optional(),
@@ -13,11 +11,11 @@ const OpenAIToolCallSchema = z
     function: z
       .object({
         name: z.string().optional(),
-        arguments: z.string().optional(),
+        arguments: z.string().optional()
       })
       .optional(),
     name: z.string().optional(),
-    arguments: z.string().optional(),
+    arguments: z.string().optional()
   })
   .passthrough()
 
@@ -32,22 +30,22 @@ const OpenAIChatCompletionResponseSchema = z.object({
               z
                 .object({
                   type: z.string(),
-                  text: z.string().optional(),
+                  text: z.string().optional()
                 })
-                .passthrough(),
+                .passthrough()
             ),
-            z.null(),
+            z.null()
           ]),
           tool_calls: z.array(OpenAIToolCallSchema).optional(),
-          function_call: OpenAIToolCallSchema.optional(),
+          function_call: OpenAIToolCallSchema.optional()
         })
-        .passthrough(),
-    }),
-  ),
+        .passthrough()
+    })
+  )
 })
 
 const OpenAIEmbeddingResponseSchema = z.object({
-  data: z.array(z.object({ embedding: z.array(z.number()) })),
+  data: z.array(z.object({ embedding: z.array(z.number()) }))
 })
 
 type OpenAIResponsesOutputText = { type: 'output_text'; text?: string }
@@ -72,27 +70,30 @@ const OpenAIResponsesResponseSchema = z
                 z
                   .object({
                     type: z.string().optional(),
-                    text: z.string().optional(),
+                    text: z.string().optional()
                   })
-                  .passthrough(),
+                  .passthrough()
               )
-              .optional(),
+              .optional()
           }),
-          z.object({}).passthrough(),
-        ]),
+          z.object({}).passthrough()
+        ])
       )
-      .optional(),
+      .optional()
   })
   .passthrough()
 
 type OpenAIResponsesResponse = z.infer<typeof OpenAIResponsesResponseSchema>
 
 const rawOpenAiBase = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
-const OPENAI_BASE_URL = rawOpenAiBase.replace(/\/$/, '')
+const OPENAI_BASE_URL = rawOpenAiBase
+  .replace(/\/$/, '')
+  .replace(/\/completions$/, '')
+  .replace(/\/chat\/completions$/, '')
 
-const OPENAI_CHAT_ENDPOINT = `${OPENAI_BASE_URL.replace(/\/chat\/completions$/, '')}/chat/completions`
-const OPENAI_RESPONSES_ENDPOINT = `${OPENAI_BASE_URL.replace(/\/chat\/completions$/, '')}/responses`
-const OPENAI_EMBEDDING_ENDPOINT = `${OPENAI_BASE_URL.replace(/\/chat\/completions$/, '')}/embeddings`
+const OPENAI_CHAT_ENDPOINT = `${OPENAI_BASE_URL}/chat/completions`
+const OPENAI_RESPONSES_ENDPOINT = `${OPENAI_BASE_URL}/responses`
+const OPENAI_EMBEDDING_ENDPOINT = `${OPENAI_BASE_URL}/embeddings`
 
 const shouldUseChatCompletions = (model: string): boolean => {
   const m = model.trim().toLowerCase()
@@ -131,7 +132,7 @@ const isOpenAIEndpointMismatchError = (error: unknown): boolean => {
 export const callOpenAI = async (
   messages: Message[],
   model: string,
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): Promise<LLMResult> => {
   const apiKey = process.env.OPENAI_API_KEY
 
@@ -159,7 +160,7 @@ export const callOpenAI = async (
 const parseJsonWithSchema = async <T>(
   response: Response,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  label: string,
+  label: string
 ): Promise<T> => {
   const payload = (await response.json()) as unknown
   const parsed = schema.safeParse(payload)
@@ -173,10 +174,10 @@ const callOpenAIChatCompletions = async (
   messages: Message[],
   model: string,
   apiKey: string,
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): Promise<LLMResult> => {
   const payloadMessages: OpenAIChatCompletionMessage[] = await Promise.all(
-    messages.map(toOpenAIMessageAsync),
+    messages.map(toOpenAIMessageAsync)
   )
   const openAiTools = toOpenAITools(tools)
 
@@ -184,14 +185,14 @@ const callOpenAIChatCompletions = async (
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model,
       temperature: 0.2,
       messages: payloadMessages,
-      ...(openAiTools ? { tools: openAiTools } : {}),
-    }),
+      ...(openAiTools ? { tools: openAiTools } : {})
+    })
   })
 
   if (!response.ok) {
@@ -202,7 +203,7 @@ const callOpenAIChatCompletions = async (
   const data = await parseJsonWithSchema(
     response,
     OpenAIChatCompletionResponseSchema,
-    'OpenAI chat completion',
+    'OpenAI chat completion'
   )
   const rawMessage = data.choices?.[0]?.message
   const rawContent = rawMessage?.content
@@ -225,7 +226,7 @@ const callOpenAIChatCompletions = async (
 
   return {
     content: content.length > 0 ? content : null,
-    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(toolCalls.length > 0 ? { toolCalls } : {})
   }
 }
 
@@ -233,10 +234,10 @@ const callOpenAIResponses = async (
   messages: Message[],
   model: string,
   apiKey: string,
-  tools?: ToolDefinition[],
+  tools?: ToolDefinition[]
 ): Promise<LLMResult> => {
   const input: OpenAIResponsesInputMessage[] = await Promise.all(
-    messages.map(toOpenAIResponsesInputMessageAsync),
+    messages.map(toOpenAIResponsesInputMessageAsync)
   )
   const openAiTools = toOpenAITools(tools)
 
@@ -244,13 +245,13 @@ const callOpenAIResponses = async (
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model,
       input,
-      ...(openAiTools ? { tools: openAiTools } : {}),
-    }),
+      ...(openAiTools ? { tools: openAiTools } : {})
+    })
   })
 
   if (!response.ok) {
@@ -261,7 +262,7 @@ const callOpenAIResponses = async (
   const data = await parseJsonWithSchema(
     response,
     OpenAIResponsesResponseSchema,
-    'OpenAI responses',
+    'OpenAI responses'
   )
   const content = extractOpenAIResponsesText(data)
   const toolCalls = extractOpenAIResponsesToolCalls(data)
@@ -272,7 +273,7 @@ const callOpenAIResponses = async (
 
   return {
     content: content ?? null,
-    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(toolCalls.length > 0 ? { toolCalls } : {})
   }
 }
 
@@ -283,7 +284,7 @@ const extractOpenAIResponsesText = (response: OpenAIResponsesResponse): string |
   const output = response.output ?? []
   const assistantMessages = output.filter(
     (item): item is OpenAIResponsesOutputMessage =>
-      item.type === 'message' && item.role === 'assistant',
+      item.type === 'message' && item.role === 'assistant'
   )
 
   const text = assistantMessages
@@ -366,7 +367,7 @@ const normalizeOpenAIToolCall = (value: unknown, fallbackIndex?: number): ToolCa
     return {
       ...(id ? { id } : {}),
       name,
-      arguments: parseToolArguments(args),
+      arguments: parseToolArguments(args)
     }
   }
 
@@ -378,7 +379,7 @@ const normalizeOpenAIToolCall = (value: unknown, fallbackIndex?: number): ToolCa
   return {
     ...(id ? { id } : {}),
     name,
-    arguments: parseToolArguments(value.arguments),
+    arguments: parseToolArguments(value.arguments)
   }
 }
 
@@ -407,7 +408,7 @@ const parseToolArguments = (value: unknown): unknown => {
 const DEFAULT_TOOL_PARAMETERS: JsonSchema = { type: 'object', properties: {} }
 
 const toOpenAITools = (
-  tools: ToolDefinition[] | undefined,
+  tools: ToolDefinition[] | undefined
 ): Array<{
   type: 'function'
   function: { name: string; description?: string; parameters: JsonSchema }
@@ -420,9 +421,9 @@ const toOpenAITools = (
     type: 'function',
     function: {
       name: tool.name,
-      ...(tool.description ? { description: tool.description } : {}),
-      parameters: resolveToolParameters(tool.inputSchema),
-    },
+      description: tool.description,
+      parameters: resolveToolParameters(tool.inputSchema)
+    }
   }))
 }
 
@@ -449,9 +450,9 @@ export const callOpenAIEmbedding = async (text: string, model: string): Promise<
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`
     },
-    body: JSON.stringify({ model, input: text }),
+    body: JSON.stringify({ model, input: text })
   })
 
   if (!response.ok) {
@@ -462,7 +463,7 @@ export const callOpenAIEmbedding = async (text: string, model: string): Promise<
   const data = await parseJsonWithSchema(
     response,
     OpenAIEmbeddingResponseSchema,
-    'OpenAI embedding',
+    'OpenAI embedding'
   )
   const embedding = data.data?.[0]?.embedding
 

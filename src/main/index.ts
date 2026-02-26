@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createIPCHandler } from 'electron-trpc/main'
@@ -108,6 +109,10 @@ const appRouter = createAppRouter({
   },
   getModels: async () => fetchAvailableModels(),
   validatePrompt: async ({ promptText, model }) => evaluatePrompt(promptText, model),
+  saveFileDirect: async ({ filePath, content }) => {
+    await fs.promises.writeFile(filePath, content, 'utf8')
+    return { success: true }
+  },
   selectFiles: async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections']

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { trpcClient } from '../trpc'
 import { useAgentStore } from '../store/useAgentStore'
+import { useAppStore } from '../store/useAppStore'
 
 const SettingsModal = () => {
   const isOpen = useAgentStore((state) => state.isSettingsOpen)
   const closeSettings = useAgentStore((state) => state.closeSettings)
+  const useVimMode = useAppStore((state) => state.useVimMode)
+  const setUseVimMode = useAppStore((state) => state.setUseVimMode)
 
   const [openaiKey, setOpenaiKey] = useState('')
   const [geminiKey, setGeminiKey] = useState('')
@@ -90,6 +93,14 @@ const SettingsModal = () => {
               onChange={(event) => setGeminiKey(event.target.value)}
               placeholder="AIza..."
             />
+          </label>
+          <label className="input-toggle">
+            <input
+              type="checkbox"
+              checked={useVimMode}
+              onChange={(event) => setUseVimMode(event.target.checked)}
+            />
+            Enable Vim Keybindings
           </label>
           {loadError ? <div className="settings-error">{loadError}</div> : null}
         </div>

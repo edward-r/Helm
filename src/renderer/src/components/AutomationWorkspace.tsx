@@ -1,15 +1,60 @@
 import { useCallback, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-
 import { trpcClient } from '../trpc'
 import { useAutomationStore } from '../store/useAutomationStore'
+import CodeEditor from './CodeEditor'
 
 const statusLabelMap: Record<'pending' | 'running' | 'success' | 'error', string> = {
   pending: 'PEND',
   running: 'RUN',
   success: 'OK',
   error: 'ERR'
+}
+
+const inferLanguage = (filePath?: string | null): string => {
+  if (!filePath) {
+    return 'markdown'
+  }
+  const extension = filePath.split('.').pop()?.toLowerCase()
+  switch (extension) {
+    case 'ts':
+    case 'tsx':
+      return 'typescript'
+    case 'js':
+    case 'jsx':
+      return 'javascript'
+    case 'json':
+      return 'json'
+    case 'md':
+    case 'markdown':
+      return 'markdown'
+    case 'py':
+      return 'python'
+    case 'go':
+      return 'go'
+    case 'rs':
+      return 'rust'
+    case 'java':
+      return 'java'
+    case 'c':
+    case 'h':
+      return 'c'
+    case 'cpp':
+    case 'cxx':
+    case 'hpp':
+      return 'cpp'
+    case 'html':
+      return 'html'
+    case 'css':
+      return 'css'
+    case 'yml':
+    case 'yaml':
+      return 'yaml'
+    case 'sh':
+    case 'bash':
+      return 'shell'
+    default:
+      return 'markdown'
+  }
 }
 
 const AutomationWorkspace = () => {
@@ -53,6 +98,37 @@ const AutomationWorkspace = () => {
   const selectedOutput = selectedFile ? results[selectedFile]?.output : undefined
   const selectedStatus = selectedFile ? results[selectedFile]?.status : undefined
   const selectedError = selectedFile ? results[selectedFile]?.errorMessage : undefined
+  const selectedLanguage = inferLanguage(selectedFile)
+
+  const handleSaveOutput = useCallback(
+    async (newText: string) => {
+      if (!selectedFile) {
+        return
+      }
+      try {
+        await trpcClient.saveFileDirect.mutate({ filePath: selectedFile, content: newText })
+        useAutomationStore.setState((state) => {
+          const existing = state.results[selectedFile] ?? { status: 'success' }
+          return {
+            results: {
+              ...state.results,
+              [selectedFile]: {
+                ...existing,
+                status: 'success',
+                output: newText,
+                errorMessage: undefined
+              }
+            }
+          }
+        })
+        console.info('Saved!')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Save failed.'
+        console.error(message)
+      }
+    },
+    [selectedFile]
+  )
 
   const fileItems = useMemo(() => {
     return files.map((filePath) => {
@@ -188,13 +264,17 @@ const AutomationWorkspace = () => {
                 <div className={`file-status-pill is-${selectedStatus}`}>{selectedStatus}</div>
               ) : null}
             </div>
-            <div className="automation-output markdown-body">
+            <div className="automation-output">
               {selectedStatus === 'error' ? (
                 <div className="automation-error-preview">
                   {selectedError ?? selectedOutput ?? 'The batch run failed for this file.'}
                 </div>
               ) : selectedOutput ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedOutput}</ReactMarkdown>
+                <CodeEditor
+                  value={selectedOutput}
+                  language={selectedLanguage}
+                  onSave={handleSaveOutput}
+                />
               ) : (
                 <div className="automation-output-empty">No output yet.</div>
               )}

@@ -22,6 +22,47 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+const normalizeProviderFromString = (value: string): string => {
+  const trimmed = value.trim()
+  const lower = trimmed.toLowerCase()
+  if (lower.includes('openai')) {
+    return 'openai'
+  }
+  if (lower.includes('google')) {
+    return 'google'
+  }
+  return trimmed
+}
+
+const resolveProviderFromRecord = (value: Record<string, unknown>): string | undefined => {
+  const name =
+    normalizeOptionalString(value.name) ??
+    normalizeOptionalString(value.id) ??
+    normalizeOptionalString(value.provider) ??
+    normalizeOptionalString(value.vendor) ??
+    normalizeOptionalString(value.organization) ??
+    normalizeOptionalString(value.owner)
+  if (name) {
+    return normalizeProviderFromString(name)
+  }
+  const npm = normalizeOptionalString(value.npm)
+  if (npm) {
+    return normalizeProviderFromString(npm)
+  }
+  const api = normalizeOptionalString(value.api)
+  if (api) {
+    return normalizeProviderFromString(api)
+  }
+  return undefined
+}
+
+const resolveModelId = (
+  value: Record<string, unknown>,
+  fallbackId?: string
+): string | undefined => {
+  return normalizeOptionalString(value.id) ?? normalizeOptionalString(value.model) ?? fallbackId
+}
+
 const coerceNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
@@ -144,6 +185,85 @@ const resolveContextLength = (value: Record<string, unknown>): number | undefine
   return undefined
 }
 
+const resolveModelType = (value: Record<string, unknown>): string | undefined => {
+  const type =
+    normalizeOptionalString(value.type) ??
+    normalizeOptionalString(value.modelType) ??
+    normalizeOptionalString(value.model_type) ??
+    normalizeOptionalString(value.kind)
+  return type?.toLowerCase()
+}
+
+const resolveCapabilitiesList = (value: Record<string, unknown>): string[] => {
+  const raw = value.capabilities ?? value.capability
+  if (Array.isArray(raw)) {
+    return normalizeStringArray(raw).map((entry) => entry.toLowerCase())
+  }
+  if (isRecord(raw)) {
+    return Object.entries(raw)
+      .filter(([, enabled]) => enabled === true)
+      .map(([key]) => key.toLowerCase())
+  }
+  if (typeof raw === 'string') {
+    return normalizeStringArray(raw).map((entry) => entry.toLowerCase())
+  }
+  return []
+}
+
+const resolveOutputModalities = (value: Record<string, unknown>): string[] => {
+  const modalities = value.modalities
+  if (isRecord(modalities)) {
+    const output = modalities.output ?? modalities.outputs ?? modalities.outputModalities
+    return normalizeStringArray(output).map((entry) => entry.toLowerCase())
+  }
+  const output = value.output ?? value.outputs
+  return normalizeStringArray(output).map((entry) => entry.toLowerCase())
+}
+
+const resolveModalitiesArray = (value: Record<string, unknown>): string[] => {
+  const raw = value.modalities
+  if (Array.isArray(raw) || typeof raw === 'string') {
+    return normalizeStringArray(raw).map((entry) => entry.toLowerCase())
+  }
+  return []
+}
+
+const supportsTextGeneration = (value: Record<string, unknown>): boolean => {
+  const type = resolveModelType(value)
+  if (type === 'chat') {
+    return true
+  }
+
+  const modalitiesArray = resolveModalitiesArray(value)
+  if (modalitiesArray.includes('text')) {
+    return true
+  }
+
+  const inputModalities = resolveInputModalities(value)
+  if (inputModalities && inputModalities.includes('text')) {
+    return true
+  }
+
+  const capabilities = resolveCapabilitiesList(value)
+  if (capabilities.length > 0) {
+    return capabilities.some((cap) => {
+      return (
+        cap.includes('text') ||
+        cap.includes('chat') ||
+        cap.includes('completion') ||
+        cap.includes('generate')
+      )
+    })
+  }
+
+  const outputs = resolveOutputModalities(value)
+  if (outputs.length > 0) {
+    return outputs.includes('text')
+  }
+
+  return false
+}
+
 const resolveToolCall = (value: Record<string, unknown>): boolean | undefined => {
   const raw =
     value.tool_call ??
@@ -153,6 +273,11 @@ const resolveToolCall = (value: Record<string, unknown>): boolean | undefined =>
     value.tooling ??
     value.functionCalling ??
     value.function_calling
+  return coerceBoolean(raw)
+}
+
+const resolveReasoning = (value: Record<string, unknown>): boolean | undefined => {
+  const raw = value.reasoning ?? value.reasoningMode ?? value.reasoning_mode
   return coerceBoolean(raw)
 }
 
@@ -201,7 +326,7 @@ const toModelInfo = (
   if (!isRecord(value)) {
     return null
   }
-  const id = normalizeOptionalString(value.id) ?? normalizeOptionalString(value.model) ?? fallbackId
+  const id = resolveModelId(value, fallbackId)
   if (!id) {
     return null
   }
@@ -210,8 +335,13 @@ const toModelInfo = (
     normalizeOptionalString(value.displayName) ??
     normalizeOptionalString(value.display_name) ??
     id
+  const providerValue = value.provider
+  const providerFromRecord = isRecord(providerValue)
+    ? resolveProviderFromRecord(providerValue)
+    : undefined
   const provider =
-    normalizeOptionalString(value.provider) ??
+    providerFromRecord ??
+    normalizeOptionalString(providerValue) ??
     normalizeOptionalString(value.vendor) ??
     normalizeOptionalString(value.organization) ??
     normalizeOptionalString(value.owner) ??
@@ -219,6 +349,7 @@ const toModelInfo = (
     'unknown'
   const contextLength = resolveContextLength(value)
   const toolCall = resolveToolCall(value)
+  const reasoning = resolveReasoning(value)
   const inputModalities = resolveInputModalities(value)
 
   return {
@@ -227,7 +358,8 @@ const toModelInfo = (
     provider,
     ...(contextLength ? { contextLength } : {}),
     ...(toolCall !== undefined ? { toolCall } : {}),
-    ...(inputModalities ? { inputModalities } : {})
+    ...(inputModalities ? { inputModalities } : {}),
+    ...(reasoning !== undefined ? { reasoning } : {})
   }
 }
 
@@ -278,6 +410,99 @@ const resolveProviderLabel = (providerKey: string, providerValue: unknown): stri
   )
 }
 
+type RawModelEntry = { raw: Record<string, unknown>; providerHint?: string }
+
+const providerPriority = (label: string | undefined): number => {
+  if (!label) {
+    return 0
+  }
+  const normalized = normalizeProviderFromString(label).toLowerCase()
+  if (normalized === 'openai' || normalized === 'google') {
+    return 2
+  }
+  if (normalized.includes('openai') || normalized.includes('google')) {
+    return 1
+  }
+  return 0
+}
+
+const collectRawModels = (payload: unknown, debugEnabled = false): Map<string, RawModelEntry> => {
+  const rawMap = new Map<string, RawModelEntry>()
+  if (isRecord(payload)) {
+    for (const [providerKey, providerValue] of Object.entries(payload)) {
+      if (!isRecord(providerValue) || !('models' in providerValue)) {
+        continue
+      }
+      const providerLabel = resolveProviderLabel(providerKey, providerValue)
+      const modelsValue = providerValue.models
+      if (Array.isArray(modelsValue)) {
+        for (const entry of modelsValue) {
+          if (!isRecord(entry)) {
+            continue
+          }
+          const id = resolveModelId(entry)
+          if (!id || rawMap.has(id)) {
+            if (id && rawMap.has(id)) {
+              const existing = rawMap.get(id)
+              const currentPriority = providerPriority(existing?.providerHint)
+              const nextPriority = providerPriority(providerLabel)
+              if (nextPriority > currentPriority) {
+                rawMap.set(id, { raw: entry, providerHint: providerLabel })
+                if (debugEnabled) {
+                  console.warn(
+                    `[models] prefer provider ${providerLabel} for ${id} (was ${existing?.providerHint ?? 'unknown'})`
+                  )
+                }
+              }
+            }
+            continue
+          }
+          rawMap.set(id, { raw: entry, providerHint: providerLabel })
+        }
+        continue
+      }
+      if (isRecord(modelsValue)) {
+        for (const [modelId, entry] of Object.entries(modelsValue)) {
+          if (!isRecord(entry)) {
+            continue
+          }
+          if (rawMap.has(modelId)) {
+            const existing = rawMap.get(modelId)
+            const currentPriority = providerPriority(existing?.providerHint)
+            const nextPriority = providerPriority(providerLabel)
+            if (nextPriority > currentPriority) {
+              rawMap.set(modelId, { raw: entry, providerHint: providerLabel })
+              if (debugEnabled) {
+                console.warn(
+                  `[models] prefer provider ${providerLabel} for ${modelId} (was ${existing?.providerHint ?? 'unknown'})`
+                )
+              }
+            }
+            continue
+          }
+          rawMap.set(modelId, { raw: entry, providerHint: providerLabel })
+        }
+      }
+    }
+  }
+
+  if (rawMap.size === 0) {
+    const candidates = collectCandidates(payload)
+    for (const candidate of candidates) {
+      if (!isRecord(candidate)) {
+        continue
+      }
+      const id = resolveModelId(candidate)
+      if (!id || rawMap.has(id)) {
+        continue
+      }
+      rawMap.set(id, { raw: candidate })
+    }
+  }
+
+  return rawMap
+}
+
 const collectProviderModels = (payload: Record<string, unknown>): ModelInfo[] => {
   const modelMap = new Map<string, ModelInfo>()
   for (const [providerKey, providerValue] of Object.entries(payload)) {
@@ -311,11 +536,14 @@ const collectProviderModels = (payload: Record<string, unknown>): ModelInfo[] =>
 }
 
 export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
+  const debugFlag = process.env.HELM_DEBUG_MODELS?.trim().toLowerCase()
+  const debugEnabled = debugFlag === '1' || debugFlag === 'true' || debugFlag === 'yes'
   const response = await fetch('https://models.dev/api.json')
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`)
   }
   const payload = (await response.json()) as unknown
+  const rawModelMap = collectRawModels(payload, debugEnabled)
   let models: ModelInfo[] = []
   if (isRecord(payload)) {
     const providerModels = collectProviderModels(payload)
@@ -339,10 +567,124 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
   }
 
   const allowedProviders = ['openai', 'google']
-  const filtered = models.filter((model) => {
-    const provider = model.provider?.toLowerCase() ?? ''
-    return allowedProviders.some((allowed) => provider.includes(allowed))
-  })
+  const blockedFragments = ['-tts', 'tts', 'embedding', 'babbage', 'davinci', 'instruct', 'audio']
+  const excluded: Array<{ id: string; provider: string; reason: string }> = []
+  const debugExclude = (id: string, provider: string, reason: string) => {
+    if (debugEnabled) {
+      excluded.push({ id, provider, reason })
+    }
+  }
+
+  const filtered: ModelInfo[] = []
+  const rawEntries = Array.from(rawModelMap.entries())
+
+  if (rawEntries.length === 0) {
+    for (const model of models) {
+      const provider = model.provider?.toLowerCase() ?? ''
+      if (!allowedProviders.some((allowed) => provider.includes(allowed))) {
+        debugExclude(model.id, model.provider, `provider:${model.provider}`)
+        continue
+      }
+
+      const idLower = model.id.toLowerCase()
+      const blockedFragment = blockedFragments.find((fragment) => idLower.includes(fragment))
+      if (blockedFragment) {
+        debugExclude(model.id, model.provider, `blocked-id:${blockedFragment}`)
+        continue
+      }
+
+      filtered.push(model)
+    }
+  } else {
+    for (const [modelId, entry] of rawEntries) {
+      const raw = entry.raw
+      const providerHint = entry.providerHint ?? ''
+      const providerLabel = providerHint || resolveProviderFromRecord(raw) || 'unknown'
+      const providerNormalized = normalizeProviderFromString(providerLabel).toLowerCase()
+      if (!allowedProviders.some((allowed) => providerNormalized.includes(allowed))) {
+        debugExclude(modelId, providerLabel, `provider:${providerLabel}`)
+        continue
+      }
+
+      const idLower = modelId.toLowerCase()
+      const blockedFragment = blockedFragments.find((fragment) => idLower.includes(fragment))
+      if (blockedFragment) {
+        debugExclude(modelId, providerLabel, `blocked-id:${blockedFragment}`)
+        continue
+      }
+
+      const type = resolveModelType(raw)
+      if (type && type !== 'chat') {
+        debugExclude(modelId, providerLabel, `type:${type}`)
+        continue
+      }
+
+      const capabilities = resolveCapabilitiesList(raw)
+      const outputs = resolveOutputModalities(raw)
+      const modalitiesArray = resolveModalitiesArray(raw)
+      if (modalitiesArray.length > 0 && !modalitiesArray.includes('text')) {
+        debugExclude(modelId, providerLabel, `modalities:${modalitiesArray.join(',')}`)
+        continue
+      }
+
+      const hasCapabilityFields = Boolean(
+        type || capabilities.length > 0 || outputs.length > 0 || modalitiesArray.length > 0
+      )
+      const supportsText = supportsTextGeneration(raw)
+
+      if (idLower.includes('vision') && !supportsText) {
+        debugExclude(modelId, providerLabel, 'vision-no-text')
+        continue
+      }
+
+      if (hasCapabilityFields && !supportsText) {
+        debugExclude(modelId, providerLabel, 'capabilities-no-text')
+        continue
+      }
+
+      const info = toModelInfo(raw, modelId, providerLabel)
+      if (info) {
+        filtered.push(info)
+      }
+    }
+  }
+
+  const forcedModelId = 'gemini-3.1-pro-preview-customtools'
+  const forcedEntry = rawModelMap.get(forcedModelId)
+  if (forcedEntry && !filtered.some((model) => model.id === forcedModelId)) {
+    const raw = forcedEntry.raw
+    const providerLabel = forcedEntry.providerHint ?? resolveProviderFromRecord(raw) ?? 'google'
+    const providerNormalized = normalizeProviderFromString(providerLabel).toLowerCase()
+    const type = resolveModelType(raw)
+    const modalities = resolveModalitiesArray(raw)
+    const supportsText = supportsTextGeneration(raw)
+    const isAllowedProvider = allowedProviders.some((allowed) =>
+      providerNormalized.includes(allowed)
+    )
+    const hasTextModalities = modalities.length === 0 || modalities.includes('text')
+    if (isAllowedProvider && (!type || type === 'chat') && supportsText && hasTextModalities) {
+      const forcedInfo = toModelInfo(raw, forcedModelId, providerLabel)
+      if (forcedInfo) {
+        filtered.push(forcedInfo)
+        if (debugEnabled) {
+          console.warn('[models] force-include', forcedModelId)
+        }
+      }
+    }
+  }
+
+  if (debugEnabled) {
+    console.warn(
+      `[models] total=${rawEntries.length || models.length} filtered=${filtered.length} excluded=${excluded.length}`
+    )
+    const maxLogs = 200
+    for (const entry of excluded.slice(0, maxLogs)) {
+      console.warn(`[models] exclude ${entry.id} (${entry.provider}) -> ${entry.reason}`)
+    }
+    if (excluded.length > maxLogs) {
+      console.warn(`[models] excluded list truncated (${maxLogs}/${excluded.length})`)
+    }
+  }
 
   return filtered.sort((left, right) => {
     const providerCompare = left.provider.localeCompare(right.provider)

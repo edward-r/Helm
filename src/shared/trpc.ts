@@ -125,6 +125,7 @@ export type ModelInfo = {
   contextLength?: number
   toolCall?: boolean
   inputModalities?: string[]
+  reasoning?: boolean
 }
 
 export type ExecutorRunInput = {
@@ -171,6 +172,11 @@ export const resolveToolApprovalInputSchema = z.object({
   approved: z.boolean()
 })
 
+export const saveFileDirectInputSchema = z.object({
+  filePath: z.string(),
+  content: z.string()
+})
+
 type ExecutorRouterDeps = {
   runExecutor: (input: ExecutorRunInput) => Promise<ExecutorResult>
   streamExecutor: (
@@ -181,6 +187,7 @@ type ExecutorRouterDeps = {
   updateConfig: (updates: AppConfig) => Promise<AppConfig>
   getModels: () => Promise<ModelInfo[]>
   validatePrompt: (input: { promptText: string; model: string }) => Promise<ValidationReport>
+  saveFileDirect: (input: { filePath: string; content: string }) => Promise<{ success: true }>
   resolveToolApproval: (input: { callId: string; approved: boolean }) => Promise<{ ok: boolean }>
   selectFiles: () => Promise<string[]>
 }
@@ -228,6 +235,9 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
     validatePrompt: t.procedure
       .input(z.object({ promptText: z.string(), model: z.string() }))
       .mutation(async ({ input }) => deps.validatePrompt(input)),
+    saveFileDirect: t.procedure
+      .input(saveFileDirectInputSchema)
+      .mutation(async ({ input }) => deps.saveFileDirect(input)),
     resolveToolApproval: t.procedure
       .input(resolveToolApprovalInputSchema)
       .mutation(async ({ input }) => deps.resolveToolApproval(input)),
