@@ -426,7 +426,7 @@ const providerPriority = (label: string | undefined): number => {
   return 0
 }
 
-const collectRawModels = (payload: unknown, debugEnabled = false): Map<string, RawModelEntry> => {
+const collectRawModels = (payload: unknown): Map<string, RawModelEntry> => {
   const rawMap = new Map<string, RawModelEntry>()
   if (isRecord(payload)) {
     for (const [providerKey, providerValue] of Object.entries(payload)) {
@@ -448,11 +448,6 @@ const collectRawModels = (payload: unknown, debugEnabled = false): Map<string, R
               const nextPriority = providerPriority(providerLabel)
               if (nextPriority > currentPriority) {
                 rawMap.set(id, { raw: entry, providerHint: providerLabel })
-                if (debugEnabled) {
-                  console.warn(
-                    `[models] prefer provider ${providerLabel} for ${id} (was ${existing?.providerHint ?? 'unknown'})`
-                  )
-                }
               }
             }
             continue
@@ -472,11 +467,6 @@ const collectRawModels = (payload: unknown, debugEnabled = false): Map<string, R
             const nextPriority = providerPriority(providerLabel)
             if (nextPriority > currentPriority) {
               rawMap.set(modelId, { raw: entry, providerHint: providerLabel })
-              if (debugEnabled) {
-                console.warn(
-                  `[models] prefer provider ${providerLabel} for ${modelId} (was ${existing?.providerHint ?? 'unknown'})`
-                )
-              }
             }
             continue
           }
@@ -536,23 +526,31 @@ const collectProviderModels = (payload: Record<string, unknown>): ModelInfo[] =>
 }
 
 export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
-  const debugFlag = process.env.HELM_DEBUG_MODELS?.trim().toLowerCase()
-  const debugEnabled = debugFlag === '1' || debugFlag === 'true' || debugFlag === 'yes'
   const response = await fetch('https://models.dev/api.json')
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`)
   }
   const payload = (await response.json()) as unknown
-  const rawModelMap = collectRawModels(payload, debugEnabled)
+  const allowedProviders = ['openai', 'google']
+  const filteredPayload = isRecord(payload)
+    ? Object.fromEntries(
+        Object.entries(payload).filter(([providerKey, providerValue]) => {
+          const providerLabel = resolveProviderLabel(providerKey, providerValue)
+          const providerNormalized = normalizeProviderFromString(providerLabel).toLowerCase()
+          return allowedProviders.some((allowed) => providerNormalized.includes(allowed))
+        })
+      )
+    : payload
+  const rawModelMap = collectRawModels(filteredPayload)
   let models: ModelInfo[] = []
-  if (isRecord(payload)) {
-    const providerModels = collectProviderModels(payload)
+  if (isRecord(filteredPayload)) {
+    const providerModels = collectProviderModels(filteredPayload)
     if (providerModels.length > 0) {
       models = providerModels
     }
   }
   if (models.length === 0) {
-    const candidates = collectCandidates(payload)
+    const candidates = collectCandidates(filteredPayload)
     const modelMap = new Map<string, ModelInfo>()
     for (const candidate of candidates) {
       const info = toModelInfo(candidate)
@@ -566,14 +564,7 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
     models = Array.from(modelMap.values())
   }
 
-  const allowedProviders = ['openai', 'google']
   const blockedFragments = ['-tts', 'tts', 'embedding', 'babbage', 'davinci', 'instruct', 'audio']
-  const excluded: Array<{ id: string; provider: string; reason: string }> = []
-  const debugExclude = (id: string, provider: string, reason: string) => {
-    if (debugEnabled) {
-      excluded.push({ id, provider, reason })
-    }
-  }
 
   const filtered: ModelInfo[] = []
   const rawEntries = Array.from(rawModelMap.entries())
@@ -582,14 +573,12 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
     for (const model of models) {
       const provider = model.provider?.toLowerCase() ?? ''
       if (!allowedProviders.some((allowed) => provider.includes(allowed))) {
-        debugExclude(model.id, model.provider, `provider:${model.provider}`)
         continue
       }
 
       const idLower = model.id.toLowerCase()
       const blockedFragment = blockedFragments.find((fragment) => idLower.includes(fragment))
       if (blockedFragment) {
-        debugExclude(model.id, model.provider, `blocked-id:${blockedFragment}`)
         continue
       }
 
@@ -602,20 +591,17 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
       const providerLabel = providerHint || resolveProviderFromRecord(raw) || 'unknown'
       const providerNormalized = normalizeProviderFromString(providerLabel).toLowerCase()
       if (!allowedProviders.some((allowed) => providerNormalized.includes(allowed))) {
-        debugExclude(modelId, providerLabel, `provider:${providerLabel}`)
         continue
       }
 
       const idLower = modelId.toLowerCase()
       const blockedFragment = blockedFragments.find((fragment) => idLower.includes(fragment))
       if (blockedFragment) {
-        debugExclude(modelId, providerLabel, `blocked-id:${blockedFragment}`)
         continue
       }
 
       const type = resolveModelType(raw)
       if (type && type !== 'chat') {
-        debugExclude(modelId, providerLabel, `type:${type}`)
         continue
       }
 
@@ -623,7 +609,6 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
       const outputs = resolveOutputModalities(raw)
       const modalitiesArray = resolveModalitiesArray(raw)
       if (modalitiesArray.length > 0 && !modalitiesArray.includes('text')) {
-        debugExclude(modelId, providerLabel, `modalities:${modalitiesArray.join(',')}`)
         continue
       }
 
@@ -633,12 +618,10 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
       const supportsText = supportsTextGeneration(raw)
 
       if (idLower.includes('vision') && !supportsText) {
-        debugExclude(modelId, providerLabel, 'vision-no-text')
         continue
       }
 
       if (hasCapabilityFields && !supportsText) {
-        debugExclude(modelId, providerLabel, 'capabilities-no-text')
         continue
       }
 
@@ -646,43 +629,6 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
       if (info) {
         filtered.push(info)
       }
-    }
-  }
-
-  const forcedModelId = 'gemini-3.1-pro-preview-customtools'
-  const forcedEntry = rawModelMap.get(forcedModelId)
-  if (forcedEntry && !filtered.some((model) => model.id === forcedModelId)) {
-    const raw = forcedEntry.raw
-    const providerLabel = forcedEntry.providerHint ?? resolveProviderFromRecord(raw) ?? 'google'
-    const providerNormalized = normalizeProviderFromString(providerLabel).toLowerCase()
-    const type = resolveModelType(raw)
-    const modalities = resolveModalitiesArray(raw)
-    const supportsText = supportsTextGeneration(raw)
-    const isAllowedProvider = allowedProviders.some((allowed) =>
-      providerNormalized.includes(allowed)
-    )
-    const hasTextModalities = modalities.length === 0 || modalities.includes('text')
-    if (isAllowedProvider && (!type || type === 'chat') && supportsText && hasTextModalities) {
-      const forcedInfo = toModelInfo(raw, forcedModelId, providerLabel)
-      if (forcedInfo) {
-        filtered.push(forcedInfo)
-        if (debugEnabled) {
-          console.warn('[models] force-include', forcedModelId)
-        }
-      }
-    }
-  }
-
-  if (debugEnabled) {
-    console.warn(
-      `[models] total=${rawEntries.length || models.length} filtered=${filtered.length} excluded=${excluded.length}`
-    )
-    const maxLogs = 200
-    for (const entry of excluded.slice(0, maxLogs)) {
-      console.warn(`[models] exclude ${entry.id} (${entry.provider}) -> ${entry.reason}`)
-    }
-    if (excluded.length > maxLogs) {
-      console.warn(`[models] excluded list truncated (${maxLogs}/${excluded.length})`)
     }
   }
 

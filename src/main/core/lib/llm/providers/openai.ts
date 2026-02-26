@@ -98,7 +98,11 @@ const OPENAI_EMBEDDING_ENDPOINT = `${OPENAI_BASE_URL}/embeddings`
 const shouldUseChatCompletions = (model: string): boolean => {
   const m = model.trim().toLowerCase()
 
-  if (m.startsWith('gpt-5') && !m.includes('chat') && !m.includes('codex')) {
+  if (m.startsWith('gpt-5')) {
+    return false
+  }
+
+  if (m.includes('codex')) {
     return false
   }
 
@@ -179,7 +183,7 @@ const callOpenAIChatCompletions = async (
   const payloadMessages: OpenAIChatCompletionMessage[] = await Promise.all(
     messages.map(toOpenAIMessageAsync)
   )
-  const openAiTools = toOpenAITools(tools)
+  const openAiTools = toOpenAIChatTools(tools)
 
   const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: 'POST',
@@ -239,7 +243,7 @@ const callOpenAIResponses = async (
   const input: OpenAIResponsesInputMessage[] = await Promise.all(
     messages.map(toOpenAIResponsesInputMessageAsync)
   )
-  const openAiTools = toOpenAITools(tools)
+  const openAiTools = toOpenAIResponsesTools(tools)
 
   const response = await fetch(OPENAI_RESPONSES_ENDPOINT, {
     method: 'POST',
@@ -407,7 +411,7 @@ const parseToolArguments = (value: unknown): unknown => {
 
 const DEFAULT_TOOL_PARAMETERS: JsonSchema = { type: 'object', properties: {} }
 
-const toOpenAITools = (
+const toOpenAIChatTools = (
   tools: ToolDefinition[] | undefined
 ): Array<{
   type: 'function'
@@ -424,6 +428,26 @@ const toOpenAITools = (
       description: tool.description,
       parameters: resolveToolParameters(tool.inputSchema)
     }
+  }))
+}
+
+const toOpenAIResponsesTools = (
+  tools: ToolDefinition[] | undefined
+): Array<{
+  type: 'function'
+  name: string
+  description?: string
+  parameters: JsonSchema
+}> | null => {
+  if (!tools || tools.length === 0) {
+    return null
+  }
+
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.name,
+    description: tool.description,
+    parameters: resolveToolParameters(tool.inputSchema)
   }))
 }
 
