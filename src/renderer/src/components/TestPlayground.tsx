@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { Message } from '../../../shared/trpc'
-import { useAgentStore } from '../store/useAgentStore'
 import { useTestStore } from '../store/useTestStore'
 
 const resolveMessageText = (message: Message): string => {
@@ -29,7 +28,6 @@ const TestPlayground = () => {
   const closePlayground = useTestStore((state) => state.closePlayground)
   const clearTestHistory = useTestStore((state) => state.clearTestHistory)
   const runTest = useTestStore((state) => state.runTest)
-  const model = useAgentStore((state) => state.model)
 
   const [inputValue, setInputValue] = useState('')
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -45,9 +43,9 @@ const TestPlayground = () => {
     if (!inputValue.trim() || isStreaming) {
       return
     }
-    runTest(inputValue, model)
+    runTest(inputValue)
     setInputValue('')
-  }, [inputValue, isStreaming, model, runTest])
+  }, [inputValue, isStreaming, runTest])
 
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {

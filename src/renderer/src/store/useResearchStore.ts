@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
+import { useAppStore } from './useAppStore'
 import type { ExecutorResult, ExecutorRunInput, ExecutorStreamEvent } from '../../../shared/trpc'
 
 type Unsubscribable = { unsubscribe: () => void }
@@ -15,7 +16,7 @@ type ResearchState = {
   isStreaming: boolean
   streamError: string | null
   setTopic: (value: string) => void
-  executeResearch: (model: string) => void
+  executeResearch: () => void
 }
 
 let activeSubscription: Unsubscribable | null = null
@@ -34,9 +35,9 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
   isStreaming: false,
   streamError: null,
   setTopic: (value) => set({ topic: value }),
-  executeResearch: (model) => {
+  executeResearch: () => {
     const topic = get().topic.trim()
-    const trimmedModel = model.trim()
+    const trimmedModel = useAppStore.getState().selectedModel.trim()
 
     if (!topic || !trimmedModel) {
       set({ streamError: 'Topic and model are required.' })

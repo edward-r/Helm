@@ -173,7 +173,21 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
     const startedAt = Date.now()
     let response: LLMResult
     try {
-      response = await callLLM(currentHistory, input.model, toolDefinitions)
+      let attempt = 0
+      while (true) {
+        try {
+          response = await callLLM(currentHistory, input.model, toolDefinitions)
+          break
+        } catch (error) {
+          attempt += 1
+          const msg = error instanceof Error ? error.message : String(error)
+          if (msg.includes('fetch failed') && attempt <= 3) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 1000))
+            continue
+          }
+          throw error
+        }
+      }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown model error.'

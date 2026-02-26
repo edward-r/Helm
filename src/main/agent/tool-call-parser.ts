@@ -46,7 +46,7 @@ export const parseToolCallsFromContent = (content: string): ToolCallParseResult 
     const parsed = safeParseJson(fenced)
     if (parsed.ok) {
       const container = parseToolCallContainer(parsed.value, 'content_json')
-      if (container) {
+      if (container && container.ok) {
         return container
       }
     }
@@ -57,7 +57,7 @@ export const parseToolCallsFromContent = (content: string): ToolCallParseResult 
     const parsedCandidate = safeParseJson(candidate)
     if (parsedCandidate.ok) {
       const container = parseToolCallContainer(parsedCandidate.value, 'content_text')
-      if (container) {
+      if (container && container.ok) {
         return container
       }
     }
@@ -68,7 +68,7 @@ export const parseToolCallsFromContent = (content: string): ToolCallParseResult 
 
 const parseToolCallContainer = (
   value: unknown,
-  source: ToolCallSource,
+  source: ToolCallSource
 ): ToolCallParseResult | null => {
   if (!isRecord(value) && !Array.isArray(value)) {
     return null
@@ -89,7 +89,7 @@ const parseToolCallContainer = (
   if (calls.value.length === 0) {
     return {
       ok: false,
-      error: { code: 'EMPTY_TOOL_CALLS', message: 'Tool call list is empty.' },
+      error: { code: 'EMPTY_TOOL_CALLS', message: 'Tool call list is empty.' }
     }
   }
 
@@ -122,7 +122,7 @@ const extractToolCallsFromArray = (value: unknown[]): ToolCallListResult | null 
     if (!isRecord(entry)) {
       return {
         ok: false,
-        error: { code: 'UNSUPPORTED_SHAPE', message: 'Tool call entry must be an object.' },
+        error: { code: 'UNSUPPORTED_SHAPE', message: 'Tool call entry must be an object.' }
       }
     }
     const parsed = parseToolCallRecord(entry, index)
@@ -137,7 +137,7 @@ const extractToolCallsFromArray = (value: unknown[]): ToolCallListResult | null 
 
 const parseToolCallRecord = (
   record: Record<string, unknown>,
-  index: number,
+  index: number
 ): { ok: true; value: ToolCall } | { ok: false; error: ToolCallParseError } => {
   const name = resolveToolName(record)
   if (!name) {
@@ -146,8 +146,8 @@ const parseToolCallRecord = (
       error: {
         code: 'MISSING_TOOL_NAME',
         message: 'Tool call is missing a name.',
-        ...(index >= 0 ? { details: { index } } : {}),
-      },
+        ...(index >= 0 ? { details: { index } } : {})
+      }
     }
   }
 
@@ -164,15 +164,15 @@ const parseToolCallRecord = (
     value: {
       ...(id ? { id } : {}),
       name,
-      arguments: argumentsValue.value,
-    },
+      arguments: argumentsValue.value
+    }
   }
 }
 
 const normalizeArguments = (
   value: unknown,
   toolName: string,
-  index: number,
+  index: number
 ): { ok: true; value: unknown } | { ok: false; error: ToolCallParseError } => {
   if (value === undefined) {
     return { ok: true, value: {} }
@@ -187,8 +187,8 @@ const normalizeArguments = (
         error: {
           code: 'INVALID_ARGUMENTS_JSON',
           message: `Tool call arguments for "${toolName}" must be valid JSON.`,
-          details: { index },
-        },
+          details: { index }
+        }
       }
     }
   }

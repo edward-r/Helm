@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
+import { useAppStore } from './useAppStore'
 import type { ExecutorRunInput, ExecutorStreamEvent, Message } from '../../../shared/trpc'
 
 type Unsubscribable = { unsubscribe: () => void }
@@ -14,7 +15,7 @@ type TestState = {
   openPlayground: (prompt: string) => void
   closePlayground: () => void
   clearTestHistory: () => void
-  runTest: (userIntent: string, model: string) => void
+  runTest: (userIntent: string) => void
 }
 
 let activeSubscription: Unsubscribable | null = null
@@ -60,9 +61,9 @@ export const useTestStore = create<TestState>((set, get) => ({
     stopActiveSubscription()
     set({ chatHistory: [], streamError: null, isStreaming: false })
   },
-  runTest: (userIntent, model) => {
+  runTest: (userIntent) => {
     const trimmedIntent = userIntent.trim()
-    const trimmedModel = model.trim()
+    const trimmedModel = useAppStore.getState().selectedModel.trim()
     const { systemPrompt, chatHistory } = get()
     const trimmedSystemPrompt = systemPrompt.trim()
 

@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 
-import { useAgentStore } from '../store/useAgentStore'
 import { useResearchStore } from '../store/useResearchStore'
 import MessageBubble from './MessageBubble'
 import TimelineFeed from './TimelineFeed'
@@ -14,7 +13,6 @@ const ResearchWorkspace = () => {
   const isStreaming = useResearchStore((state) => state.isStreaming)
   const streamError = useResearchStore((state) => state.streamError)
   const executeResearch = useResearchStore((state) => state.executeResearch)
-  const model = useAgentStore((state) => state.model)
 
   const canSubmit = topic.trim().length > 0 && !isStreaming
 
@@ -22,10 +20,10 @@ const ResearchWorkspace = () => {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       if (canSubmit) {
-        executeResearch(model)
+        executeResearch()
       }
     },
-    [canSubmit, executeResearch, model]
+    [canSubmit, executeResearch]
   )
 
   const handleKeyDown = useCallback(
@@ -33,11 +31,11 @@ const ResearchWorkspace = () => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault()
         if (canSubmit) {
-          executeResearch(model)
+          executeResearch()
         }
       }
     },
-    [canSubmit, executeResearch, model]
+    [canSubmit, executeResearch]
   )
 
   return (

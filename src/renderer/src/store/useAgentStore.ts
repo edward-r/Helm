@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
+import { useAppStore } from './useAppStore'
 import type {
   ExecutorResult,
   ExecutorRunInput,
@@ -15,7 +16,6 @@ type Unsubscribable = { unsubscribe: () => void }
 type AgentState = {
   systemPrompt: string
   userIntent: string
-  model: string
   maxIterations: string
   autoApprove: boolean
   attachments: string[]
@@ -30,7 +30,6 @@ type AgentState = {
   pendingApproval: { callId: string; toolName: string; plan: ToolExecutionPlan } | null
   setSystemPrompt: (value: string) => void
   setUserIntent: (value: string) => void
-  setModel: (value: string) => void
   setMaxIterations: (value: string) => void
   setAutoApprove: (value: boolean) => void
   addAttachments: (paths: string[]) => void
@@ -48,7 +47,6 @@ type AgentState = {
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.'
 const DEFAULT_USER_INTENT = 'Draft a short greeting and list three ideas.'
-const DEFAULT_MODEL = 'gpt-5.1-codex'
 const DEFAULT_MAX_ITERATIONS = '8'
 
 let activeSubscription: Unsubscribable | null = null
@@ -71,7 +69,6 @@ const stopActiveSubscription = (): void => {
 export const useAgentStore = create<AgentState>((set, get) => ({
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   userIntent: DEFAULT_USER_INTENT,
-  model: DEFAULT_MODEL,
   maxIterations: DEFAULT_MAX_ITERATIONS,
   autoApprove: false,
   attachments: [],
@@ -86,7 +83,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingApproval: null,
   setSystemPrompt: (value) => set({ systemPrompt: value }),
   setUserIntent: (value) => set({ userIntent: value }),
-  setModel: (value) => set({ model: value }),
   setMaxIterations: (value) => set({ maxIterations: value }),
   setAutoApprove: (value) => set({ autoApprove: value }),
   addAttachments: (paths) =>
@@ -122,7 +118,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const report = await trpcClient.validatePrompt.mutate({
         promptText: text,
-        model: get().model
+        model: useAppStore.getState().selectedModel
       })
       set({ validationReport: report, isValidating: false })
     } catch (error) {
@@ -134,18 +130,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   openSettings: () => set({ isSettingsOpen: true }),
   closeSettings: () => set({ isSettingsOpen: false }),
   executeIntent: () => {
-    const {
-      systemPrompt,
-      userIntent,
-      model,
-      maxIterations,
-      autoApprove,
-      attachments,
-      chatHistory
-    } = get()
+    const { systemPrompt, userIntent, maxIterations, autoApprove, attachments, chatHistory } = get()
     const trimmedSystemPrompt = systemPrompt.trim()
     const trimmedIntent = userIntent.trim()
-    const trimmedModel = model.trim()
+    const trimmedModel = useAppStore.getState().selectedModel.trim()
     const intentForRun = trimmedIntent
     const historyForRun = chatHistory.length > 0 ? chatHistory : undefined
 
