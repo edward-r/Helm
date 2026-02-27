@@ -7,7 +7,7 @@ import type {
   PdfPart,
   TextPart,
   ToolCallRequest,
-  VideoPart,
+  VideoPart
 } from './types'
 import { extractPdfTextFromFile } from './pdf/extract'
 
@@ -38,10 +38,8 @@ export type OpenAIResponsesInputContent =
   | Array<OpenAIResponsesInputText | OpenAIResponsesInputImage>
 
 export type OpenAIResponsesInputMessage = {
-  role: 'developer' | 'user' | 'assistant' | 'tool'
+  role: 'developer' | 'user' | 'assistant'
   content: OpenAIResponsesInputContent
-  tool_calls?: OpenAIToolCall[]
-  tool_call_id?: string
 }
 
 export type GeminiContentPart =
@@ -58,7 +56,7 @@ const isPdfPart = (part: TextPart | ImagePart | VideoPart | PdfPart): part is Pd
 }
 
 export const toOpenAIMessageAsync = async (
-  message: Message,
+  message: Message
 ): Promise<OpenAIChatCompletionMessage> => {
   const toolCalls = message.toolCalls ?? message.tool_calls
   const toolCallId = resolveToolCallId(message)
@@ -71,7 +69,7 @@ export const toOpenAIMessageAsync = async (
     role: message.role,
     content: await toOpenAIContentAsync(message.content),
     ...(normalizedToolCalls.length > 0 ? { tool_calls: normalizedToolCalls } : {}),
-    ...(toolCallId ? { tool_call_id: toolCallId } : {}),
+    ...(toolCallId ? { tool_call_id: toolCallId } : {})
   }
 }
 
@@ -83,7 +81,7 @@ const toOpenAIContentAsync = async (content: MessageContent): Promise<OpenAIChat
   const hasVideo = content.some((part) => isVideoPart(part))
   if (hasVideo) {
     throw new Error(
-      'Video inputs are only supported when using Gemini models. Remove --video or switch to a Gemini model.',
+      'Video inputs are only supported when using Gemini models. Remove --video or switch to a Gemini model.'
     )
   }
 
@@ -105,7 +103,7 @@ const toOpenAIContentAsync = async (content: MessageContent): Promise<OpenAIChat
     if (part.type === 'image') {
       parts.push({
         type: 'image_url',
-        image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+        image_url: { url: `data:${part.mimeType};base64,${part.data}` }
       })
       continue
     }
@@ -128,20 +126,19 @@ const toOpenAIContentAsync = async (content: MessageContent): Promise<OpenAIChat
 }
 
 export const toOpenAIResponsesInputMessageAsync = async (
-  message: Message,
+  message: Message
 ): Promise<OpenAIResponsesInputMessage> => {
-  const toolCalls = message.toolCalls ?? message.tool_calls
-  const toolCallId = resolveToolCallId(message)
-  const normalizedToolCalls = toolCalls
-    ? toolCalls
-        .map((call, index) => toOpenAIToolCall(call, index))
-        .filter((call): call is OpenAIToolCall => Boolean(call))
-    : []
+  const toolCallId = message.toolCallId ?? message.tool_call_id
+  const role =
+    message.role === 'system' ? 'developer' : message.role === 'tool' ? 'user' : message.role
+  let content = await toOpenAIResponsesContentAsync(message.content)
+  if (message.role === 'tool' && typeof content === 'string') {
+    const prefix = toolCallId ? `Tool result (${toolCallId}):\n` : 'Tool result:\n'
+    content = `${prefix}${content}`
+  }
   return {
-    role: message.role === 'system' ? 'developer' : message.role,
-    content: await toOpenAIResponsesContentAsync(message.content),
-    ...(normalizedToolCalls.length > 0 ? { tool_calls: normalizedToolCalls } : {}),
-    ...(toolCallId ? { tool_call_id: toolCallId } : {}),
+    role,
+    content
   }
 }
 
@@ -150,7 +147,7 @@ const toOpenAIToolCall = (call: ToolCallRequest, index: number): OpenAIToolCall 
     return {
       id: call.id,
       type: 'type' in call && typeof call.type === 'string' ? call.type : 'function',
-      function: call.function,
+      function: call.function
     }
   }
 
@@ -164,8 +161,8 @@ const toOpenAIToolCall = (call: ToolCallRequest, index: number): OpenAIToolCall 
     type: 'type' in call && typeof call.type === 'string' ? call.type : 'function',
     function: {
       name,
-      arguments: serializeToolArguments(call.arguments),
-    },
+      arguments: serializeToolArguments(call.arguments)
+    }
   }
 }
 
@@ -200,7 +197,7 @@ const resolveToolCallId = (message: Message): string | undefined => {
 }
 
 const toOpenAIResponsesContentAsync = async (
-  content: MessageContent,
+  content: MessageContent
 ): Promise<OpenAIResponsesInputContent> => {
   if (typeof content === 'string') {
     return content
@@ -209,7 +206,7 @@ const toOpenAIResponsesContentAsync = async (
   const hasVideo = content.some((part) => isVideoPart(part))
   if (hasVideo) {
     throw new Error(
-      'Video inputs are only supported when using Gemini models. Remove --video or switch to a Gemini model.',
+      'Video inputs are only supported when using Gemini models. Remove --video or switch to a Gemini model.'
     )
   }
 
@@ -229,7 +226,7 @@ const toOpenAIResponsesContentAsync = async (
     if (part.type === 'image') {
       parts.push({
         type: 'input_image',
-        image_url: `data:${part.mimeType};base64,${part.data}`,
+        image_url: `data:${part.mimeType};base64,${part.data}`
       })
       continue
     }
@@ -273,7 +270,7 @@ export const toGeminiParts = (content: MessageContent): GeminiContentPart[] => {
       if (!part.fileUri) {
         throw new Error(
           `PDF attachment ${part.filePath} is missing a Gemini fileUri. ` +
-            'Upload the PDF via the Gemini Files API before calling Gemini models.',
+            'Upload the PDF via the Gemini Files API before calling Gemini models.'
         )
       }
       return { fileData: { mimeType: part.mimeType, fileUri: part.fileUri } }

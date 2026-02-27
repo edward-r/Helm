@@ -4,13 +4,15 @@ import type { GenerateImageOptions, GenerateImageResponse } from './generate-ima
 import { generateImage } from './generate-image'
 import type { ReadWebPageResponse, SearchWebResponse } from './browser'
 import { readWebPage, searchWeb } from './browser'
+import type { LspDocumentSymbolsInput, LspPositionInput, LspToolResponse } from './lsp-tools'
+import { lsp_document_symbols, lsp_find_references, lsp_go_to_definition } from './lsp-tools'
 import type {
   ListDirInput,
   ListDirResult,
   ReadFileInput,
   ReadFileResult,
   WriteFileInput,
-  WriteFileResult,
+  WriteFileResult
 } from './fs'
 import { list_dir, read_file, write_file } from './fs'
 
@@ -22,6 +24,9 @@ export const TOOL_NAMES = [
   'read_file',
   'list_dir',
   'write_file',
+  'lsp_go_to_definition',
+  'lsp_find_references',
+  'lsp_document_symbols'
 ] as const
 
 export type ToolName = (typeof TOOL_NAMES)[number]
@@ -49,6 +54,9 @@ export type ToolDispatchRequest =
   | { name: 'read_file'; arguments: ReadFileInput }
   | { name: 'list_dir'; arguments: ListDirInput }
   | { name: 'write_file'; arguments: WriteFileInput }
+  | { name: 'lsp_go_to_definition'; arguments: LspPositionInput }
+  | { name: 'lsp_find_references'; arguments: LspPositionInput }
+  | { name: 'lsp_document_symbols'; arguments: LspDocumentSymbolsInput }
 
 export type ToolDispatchResponse =
   | { name: 'search_web'; result: SearchWebResponse }
@@ -58,6 +66,9 @@ export type ToolDispatchResponse =
   | { name: 'read_file'; result: ReadFileResult }
   | { name: 'list_dir'; result: ListDirResult }
   | { name: 'write_file'; result: WriteFileResult }
+  | { name: 'lsp_go_to_definition'; result: LspToolResponse }
+  | { name: 'lsp_find_references'; result: LspToolResponse }
+  | { name: 'lsp_document_symbols'; result: LspToolResponse }
 
 export const dispatchTool = async (request: ToolDispatchRequest): Promise<ToolDispatchResponse> => {
   switch (request.name) {
@@ -102,6 +113,18 @@ export const dispatchTool = async (request: ToolDispatchRequest): Promise<ToolDi
     }
     case 'write_file': {
       const result = await write_file(request.arguments)
+      return { name: request.name, result }
+    }
+    case 'lsp_go_to_definition': {
+      const result = await lsp_go_to_definition(request.arguments)
+      return { name: request.name, result }
+    }
+    case 'lsp_find_references': {
+      const result = await lsp_find_references(request.arguments)
+      return { name: request.name, result }
+    }
+    case 'lsp_document_symbols': {
+      const result = await lsp_document_symbols(request.arguments)
       return { name: request.name, result }
     }
   }
