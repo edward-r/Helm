@@ -37,6 +37,7 @@ import {
   type ToolExecutionIo,
   summarizeToolExecution
 } from './tool-execution-result'
+import { BASE_SYSTEM_PROMPT, PERSONA_PROMPTS } from './system-prompts'
 
 export type ExecutorInput = {
   systemPrompt: string
@@ -122,12 +123,16 @@ const VIDEO_MIME_TYPES: Record<string, string> = {
 }
 
 export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
+  const activePersona = (input.persona || 'builder') as Persona
+  const specificInstruction = PERSONA_PROMPTS[activePersona] ?? PERSONA_PROMPTS.builder
+  const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nYour Current Persona: ${specificInstruction}`
+
   const history = input.history ?? []
   const hasHistory = history.length > 0
   let currentHistory = hasHistory
     ? [...history]
     : await createInitialHistory(
-        input.systemPrompt,
+        finalSystemPrompt,
         input.userIntent,
         input.model,
         input.attachments
@@ -135,13 +140,10 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
 
   if (hasHistory) {
     const userMessage = await buildUserMessage(input.userIntent, input.model, input.attachments)
-    const systemMessage: Message = { role: 'system', content: input.systemPrompt }
-    const historyWithSystem = currentHistory.some((message) => message.role === 'system')
-      ? currentHistory
-      : [systemMessage, ...currentHistory]
-    currentHistory = [...historyWithSystem, userMessage]
+    const systemMessage: Message = { role: 'system', content: finalSystemPrompt }
+    const historyWithoutSystem = currentHistory.filter((message) => message.role !== 'system')
+    currentHistory = [systemMessage, ...historyWithoutSystem, userMessage]
   }
-  const activePersona = (input.persona || 'builder') as Persona
   const allowedToolNames = PERSONA_TOOLS[activePersona] || PERSONA_TOOLS.builder
   const allowedToolSet = new Set<string>(allowedToolNames)
   const activeTools = ALL_TOOLS.filter((tool) => allowedToolSet.has(tool.name))
