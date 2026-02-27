@@ -116,6 +116,7 @@ export type AppConfig = {
   openaiKey?: string
   geminiKey?: string
   defaultModel?: string
+  lspOverrides?: Record<string, string>
 }
 
 export type ModelInfo = {
@@ -164,7 +165,8 @@ export const executorRunInputSchema = z.object({
 export const updateConfigInputSchema = z.object({
   openaiKey: z.string().optional(),
   geminiKey: z.string().optional(),
-  defaultModel: z.string().optional()
+  defaultModel: z.string().optional(),
+  lspOverrides: z.record(z.string()).optional()
 })
 
 export const resolveToolApprovalInputSchema = z.object({

@@ -12,6 +12,8 @@ const SettingsModal = () => {
 
   const [openaiKey, setOpenaiKey] = useState('')
   const [geminiKey, setGeminiKey] = useState('')
+  const [typescriptLspPath, setTypescriptLspPath] = useState('')
+  const [pythonLspPath, setPythonLspPath] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -28,6 +30,8 @@ const SettingsModal = () => {
         }
         setOpenaiKey(config.openaiKey ?? '')
         setGeminiKey(config.geminiKey ?? '')
+        setTypescriptLspPath(config.lspOverrides?.typescript ?? '')
+        setPythonLspPath(config.lspOverrides?.python ?? '')
         setLoadError(null)
       } catch (error) {
         if (!active) {
@@ -46,9 +50,19 @@ const SettingsModal = () => {
   const handleSave = useCallback(async () => {
     setIsSaving(true)
     try {
+      const normalizedTypescript = typescriptLspPath.trim()
+      const normalizedPython = pythonLspPath.trim()
+      const lspOverrides: Record<string, string> = {}
+      if (normalizedTypescript) {
+        lspOverrides.typescript = normalizedTypescript
+      }
+      if (normalizedPython) {
+        lspOverrides.python = normalizedPython
+      }
       await trpcClient.updateConfig.mutate({
         openaiKey,
-        geminiKey
+        geminiKey,
+        lspOverrides
       })
       closeSettings()
     } catch (error) {
@@ -57,7 +71,7 @@ const SettingsModal = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [closeSettings, geminiKey, openaiKey])
+  }, [closeSettings, geminiKey, openaiKey, pythonLspPath, typescriptLspPath])
 
   if (!isOpen) {
     return null
@@ -92,6 +106,25 @@ const SettingsModal = () => {
               value={geminiKey}
               onChange={(event) => setGeminiKey(event.target.value)}
               placeholder="AIza..."
+            />
+          </label>
+          <div className="settings-subtitle">Language Servers</div>
+          <label className="settings-field">
+            <span>TypeScript LSP Path</span>
+            <input
+              type="text"
+              value={typescriptLspPath}
+              onChange={(event) => setTypescriptLspPath(event.target.value)}
+              placeholder="vtsls or /path/to/vtsls"
+            />
+          </label>
+          <label className="settings-field">
+            <span>Python LSP Path</span>
+            <input
+              type="text"
+              value={pythonLspPath}
+              onChange={(event) => setPythonLspPath(event.target.value)}
+              placeholder="pyright-langserver or /path/to/pyright-langserver"
             />
           </label>
           <label className="input-toggle">

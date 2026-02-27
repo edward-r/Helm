@@ -22,6 +22,24 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+const normalizeLspOverrides = (value: unknown): Record<string, string> | undefined => {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const normalized: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    const normalizedKey = key.trim()
+    const normalizedValue = normalizeOptionalString(entry)
+    if (!normalizedKey || !normalizedValue) {
+      continue
+    }
+    normalized[normalizedKey] = normalizedValue
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
 const normalizeProviderFromString = (value: string): string => {
   const trimmed = value.trim()
   const lower = trimmed.toLowerCase()
@@ -111,7 +129,8 @@ const sanitizeConfig = (value: unknown): AppConfig => {
   return {
     openaiKey: normalizeOptionalString(value.openaiKey),
     geminiKey: normalizeOptionalString(value.geminiKey),
-    defaultModel: normalizeOptionalString(value.defaultModel)
+    defaultModel: normalizeOptionalString(value.defaultModel),
+    lspOverrides: normalizeLspOverrides(value.lspOverrides)
   }
 }
 
@@ -142,6 +161,9 @@ export const updateConfig = async (updates: ConfigUpdates): Promise<AppConfig> =
   }
   if ('defaultModel' in updates) {
     next.defaultModel = normalizeOptionalString(updates.defaultModel)
+  }
+  if ('lspOverrides' in updates) {
+    next.lspOverrides = normalizeLspOverrides(updates.lspOverrides)
   }
 
   const filePath = resolveConfigPath()

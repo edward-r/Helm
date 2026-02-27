@@ -1,7 +1,8 @@
+import { execSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
+import { app } from 'electron'
 import type { MessageConnection } from 'vscode-jsonrpc'
 import {
   createMessageConnection,
@@ -9,8 +10,12 @@ import {
   StreamMessageWriter
 } from 'vscode-jsonrpc/node'
 
+import { getConfig } from '../../config-manager'
+
 type ServerConfig = {
-  command: string
+  languageId: string
+  defaultCommand: string
+  npmPackageName: string
   args: string[]
 }
 
@@ -20,6 +25,7 @@ type ServerEntry = {
 }
 
 const PROJECT_ROOT_MARKERS = ['.git', 'package.json', 'tsconfig.json', 'pyproject.toml']
+const lspDir = path.join(app.getPath('userData'), 'managed-lsps')
 
 export const findProjectRoot = (filePath: string): string => {
   const resolvedPath = path.resolve(filePath)
@@ -64,9 +70,53 @@ export const sendRequestWithTimeout = (
 }
 
 const serverConfigs: Record<string, ServerConfig> = {
-  '.ts': { command: 'vtsls', args: ['--stdio'] },
-  '.tsx': { command: 'vtsls', args: ['--stdio'] },
-  '.py': { command: 'pyright-langserver', args: ['--stdio'] }
+  '.ts': {
+    languageId: 'typescript',
+    defaultCommand: 'vtsls',
+    npmPackageName: '@vtsls/language-server',
+    args: ['--stdio']
+  },
+  '.tsx': {
+    languageId: 'typescript',
+    defaultCommand: 'vtsls',
+    npmPackageName: '@vtsls/language-server',
+    args: ['--stdio']
+  },
+  '.py': {
+    languageId: 'python',
+    defaultCommand: 'pyright-langserver',
+    npmPackageName: 'pyright',
+    args: ['--stdio']
+  }
+}
+
+const resolveLspCommand = async (
+  languageId: string,
+  defaultCommand: string,
+  npmPackageName: string
+): Promise<string> => {
+  const config = await getConfig()
+  const override = config.lspOverrides?.[languageId]
+  if (typeof override === 'string' && override.trim().length > 0) {
+    return override.trim()
+  }
+
+  const managedBin = path.join(lspDir, 'node_modules', '.bin', defaultCommand)
+  if (fs.existsSync(managedBin)) {
+    return managedBin
+  }
+
+  const whichCommand = process.platform === 'win32' ? 'where' : 'which'
+  try {
+    execSync(`${whichCommand} ${defaultCommand}`, { stdio: 'ignore' })
+    return defaultCommand
+  } catch {
+    // fallback to auto-install
+  }
+
+  fs.mkdirSync(lspDir, { recursive: true })
+  execSync(`npm install ${npmPackageName} --prefix "${lspDir}"`, { stdio: 'ignore' })
+  return path.join(lspDir, 'node_modules', '.bin', defaultCommand)
 }
 
 const LANGUAGE_ID_BY_EXTENSION: Record<string, string> = {
@@ -90,14 +140,20 @@ export class LspManager {
       throw new Error(`No LSP server configured for extension: ${extension || '(none)'}`)
     }
 
+    const command = await resolveLspCommand(
+      config.languageId,
+      config.defaultCommand,
+      config.npmPackageName
+    )
+
     const projectRoot = findProjectRoot(resolvedPath)
-    const cacheKey = `${config.command}:${config.args.join(' ')}:${projectRoot}`
+    const cacheKey = `${command}:${config.args.join(' ')}:${projectRoot}`
     const existing = LspManager.servers.get(cacheKey)
     if (existing) {
       return existing.connection
     }
 
-    const child = spawn(config.command, config.args, { stdio: 'pipe' })
+    const child = spawn(command, config.args, { stdio: 'pipe' })
     const connection = createMessageConnection(
       new StreamMessageReader(child.stdout),
       new StreamMessageWriter(child.stdin)
