@@ -265,6 +265,8 @@ const WorkspaceLayout = () => {
   const clearHistory = useAgentStore((state) => state.clearHistory)
   const openSettings = useAgentStore((state) => state.openSettings)
   const setMode = useAppStore((state) => state.setMode)
+  const activePersona = useAppStore((state) => state.activePersona)
+  const setActivePersona = useAppStore((state) => state.setActivePersona)
 
   const isGenerateMode = currentMode === 'generate'
   const isResearchMode = currentMode === 'research'
@@ -300,6 +302,16 @@ const WorkspaceLayout = () => {
             Automation Runner
           </button>
         </div>
+        <label className="input-field">
+          <span>Persona</span>
+          <select value={activePersona} onChange={(event) => setActivePersona(event.target.value)}>
+            <option value="builder">Builder (Read/Write)</option>
+            <option value="architect">Architect (Read-Only)</option>
+            <option value="researcher">Researcher (Web/Read)</option>
+            <option value="designer">Designer (Media/Files)</option>
+            <option value="learner">Learner (Explore/Study)</option>
+          </select>
+        </label>
         <ModelSelector />
       </aside>
       <div className="app-content">

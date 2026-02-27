@@ -108,6 +108,7 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
           systemPrompt,
           userIntent: trimmedPrompt,
           model: trimmedModel,
+          persona: useAppStore.getState().activePersona,
           attachments: [filePath],
           autoApprove: true
         }

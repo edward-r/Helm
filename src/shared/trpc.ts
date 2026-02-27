@@ -137,6 +137,7 @@ export type ExecutorRunInput = {
   autoApprove?: boolean
   attachments?: string[]
   history?: Message[]
+  persona?: string
 }
 
 export type ToolApprovalRequiredEvent = {
@@ -159,7 +160,8 @@ export const executorRunInputSchema = z.object({
   maxIterations: z.number().int().positive().optional(),
   autoApprove: z.boolean().optional(),
   attachments: z.array(z.string()).optional(),
-  history: z.array(z.any()).optional()
+  history: z.array(z.any()).optional(),
+  persona: z.string().optional()
 })
 
 export const updateConfigInputSchema = z.object({

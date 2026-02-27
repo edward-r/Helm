@@ -158,6 +158,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       systemPrompt: trimmedSystemPrompt,
       userIntent: trimmedIntent,
       model: trimmedModel,
+      persona: useAppStore.getState().activePersona,
       ...(maxIterationsValue ? { maxIterations: maxIterationsValue } : {}),
       ...(autoApprove ? { autoApprove: true } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),

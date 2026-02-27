@@ -29,6 +29,39 @@ export const TOOL_NAMES = [
   'lsp_document_symbols'
 ] as const
 
+export const PERSONA_TOOLS = {
+  builder: [
+    'read_file',
+    'write_file',
+    'execute_command',
+    'search_web',
+    'read_web_page',
+    'lsp_document_symbols',
+    'lsp_find_references',
+    'lsp_go_to_definition'
+  ],
+  architect: [
+    'read_file',
+    'search_web',
+    'read_web_page',
+    'lsp_document_symbols',
+    'lsp_find_references',
+    'lsp_go_to_definition'
+  ],
+  researcher: ['search_web', 'read_web_page', 'read_file'],
+  designer: ['read_file', 'write_file'],
+  learner: [
+    'read_file',
+    'search_web',
+    'read_web_page',
+    'lsp_document_symbols',
+    'lsp_find_references',
+    'lsp_go_to_definition'
+  ]
+} as const
+
+export type Persona = keyof typeof PERSONA_TOOLS
+
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 export type ToolDispatchRequest =

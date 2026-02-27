@@ -58,6 +58,7 @@ const runExecutor = async (input: ExecutorRunInput) => {
     maxIterations: input.maxIterations,
     attachments: input.attachments,
     history: input.history,
+    persona: input.persona,
     onToolApproval
   })
 }
@@ -81,6 +82,7 @@ const streamExecutor = async (
     maxIterations: input.maxIterations,
     attachments: input.attachments,
     history: input.history,
+    persona: input.persona,
     onThinkingEvent,
     onToolEvent,
     onToolApproval: createOnToolApproval(autoApprove, emit)

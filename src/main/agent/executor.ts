@@ -17,6 +17,7 @@ import { uploadToGemini } from '../core/lib/llm/providers/gemini-files'
 import { isGeminiModelId } from '../model-providers'
 import type { AgentTool } from './tools/tool-types'
 import { ALL_TOOLS } from './tools'
+import { PERSONA_TOOLS, type Persona } from './tools/registry'
 import type { ThinkingEvent, ToolErrorEvent, ToolSuccessEvent } from '../../shared/agent-events'
 import {
   parseToolCallsFromResult,
@@ -45,6 +46,7 @@ export type ExecutorInput = {
   maxIterations?: number
   attachments?: string[]
   history?: Message[]
+  persona?: string
   onThinkingEvent?: (event: ThinkingEvent) => void
   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
   onToolEvent?: (event: ToolExecutionEvent) => void
@@ -139,12 +141,16 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       : [systemMessage, ...currentHistory]
     currentHistory = [...historyWithSystem, userMessage]
   }
-  const toolDefinitions: ToolDefinition[] = ALL_TOOLS
-  const registryError = validateToolRegistry(ALL_TOOLS)
+  const activePersona = (input.persona || 'builder') as Persona
+  const allowedToolNames = PERSONA_TOOLS[activePersona] || PERSONA_TOOLS.builder
+  const allowedToolSet = new Set<string>(allowedToolNames)
+  const activeTools = ALL_TOOLS.filter((tool) => allowedToolSet.has(tool.name))
+  const toolDefinitions: ToolDefinition[] = activeTools
+  const registryError = validateToolRegistry(activeTools)
   if (registryError) {
     return { ok: false, error: registryError, messages: currentHistory }
   }
-  const toolExecutorsResult = resolveToolExecutors(input.tools)
+  const toolExecutorsResult = resolveToolExecutors(input.tools, activeTools)
   if (!toolExecutorsResult.ok) {
     return { ok: false, error: toolExecutorsResult.error, messages: currentHistory }
   }
@@ -701,13 +707,16 @@ const buildThinkingEndEvent = (
 
 type ToolRegistryResult = { ok: true; value: AgentTool[] } | { ok: false; error: ExecutorError }
 
-const resolveToolExecutors = (tools?: AgentTool[]): ToolRegistryResult => {
+const resolveToolExecutors = (
+  tools: AgentTool[] | undefined,
+  allowedTools: AgentTool[]
+): ToolRegistryResult => {
   if (!tools || tools.length === 0) {
-    return { ok: true, value: ALL_TOOLS }
+    return { ok: true, value: allowedTools }
   }
 
   const provided = tools.map((tool) => tool.name).sort()
-  const expected = ALL_TOOLS.map((tool) => tool.name).sort()
+  const expected = allowedTools.map((tool) => tool.name).sort()
   const matches =
     provided.length === expected.length && provided.every((name, index) => name === expected[index])
   if (!matches) {
