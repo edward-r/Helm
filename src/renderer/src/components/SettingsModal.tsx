@@ -10,10 +10,10 @@ const SettingsModal = () => {
   const useVimMode = useAppStore((state) => state.useVimMode)
   const setUseVimMode = useAppStore((state) => state.setUseVimMode)
 
+  const [activeTab, setActiveTab] = useState<'general' | 'models' | 'lsp'>('models')
   const [openaiKey, setOpenaiKey] = useState('')
   const [geminiKey, setGeminiKey] = useState('')
-  const [typescriptLspPath, setTypescriptLspPath] = useState('')
-  const [pythonLspPath, setPythonLspPath] = useState('')
+  const [lspOverrides, setLspOverrides] = useState<Record<string, string>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -30,8 +30,7 @@ const SettingsModal = () => {
         }
         setOpenaiKey(config.openaiKey ?? '')
         setGeminiKey(config.geminiKey ?? '')
-        setTypescriptLspPath(config.lspOverrides?.typescript ?? '')
-        setPythonLspPath(config.lspOverrides?.python ?? '')
+        setLspOverrides(config.lspOverrides ?? {})
         setLoadError(null)
       } catch (error) {
         if (!active) {
@@ -50,19 +49,21 @@ const SettingsModal = () => {
   const handleSave = useCallback(async () => {
     setIsSaving(true)
     try {
-      const normalizedTypescript = typescriptLspPath.trim()
-      const normalizedPython = pythonLspPath.trim()
-      const lspOverrides: Record<string, string> = {}
-      if (normalizedTypescript) {
-        lspOverrides.typescript = normalizedTypescript
-      }
-      if (normalizedPython) {
-        lspOverrides.python = normalizedPython
-      }
+      const normalizedOverrides = Object.entries(lspOverrides).reduce<Record<string, string>>(
+        (acc, [key, value]) => {
+          const trimmedKey = key.trim()
+          const trimmedValue = value.trim()
+          if (trimmedKey && trimmedValue) {
+            acc[trimmedKey] = trimmedValue
+          }
+          return acc
+        },
+        {}
+      )
       await trpcClient.updateConfig.mutate({
         openaiKey,
         geminiKey,
-        lspOverrides
+        lspOverrides: normalizedOverrides
       })
       closeSettings()
     } catch (error) {
@@ -71,7 +72,7 @@ const SettingsModal = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [closeSettings, geminiKey, openaiKey, pythonLspPath, typescriptLspPath])
+  }, [closeSettings, geminiKey, lspOverrides, openaiKey])
 
   if (!isOpen) {
     return null
@@ -90,51 +91,95 @@ const SettingsModal = () => {
           </button>
         </div>
         <div className="settings-body">
-          <label className="settings-field">
-            <span>OpenAI API Key</span>
-            <input
-              type="password"
-              value={openaiKey}
-              onChange={(event) => setOpenaiKey(event.target.value)}
-              placeholder="sk-..."
-            />
-          </label>
-          <label className="settings-field">
-            <span>Gemini API Key</span>
-            <input
-              type="password"
-              value={geminiKey}
-              onChange={(event) => setGeminiKey(event.target.value)}
-              placeholder="AIza..."
-            />
-          </label>
-          <div className="settings-subtitle">Language Servers</div>
-          <label className="settings-field">
-            <span>TypeScript LSP Path</span>
-            <input
-              type="text"
-              value={typescriptLspPath}
-              onChange={(event) => setTypescriptLspPath(event.target.value)}
-              placeholder="vtsls or /path/to/vtsls"
-            />
-          </label>
-          <label className="settings-field">
-            <span>Python LSP Path</span>
-            <input
-              type="text"
-              value={pythonLspPath}
-              onChange={(event) => setPythonLspPath(event.target.value)}
-              placeholder="pyright-langserver or /path/to/pyright-langserver"
-            />
-          </label>
-          <label className="input-toggle">
-            <input
-              type="checkbox"
-              checked={useVimMode}
-              onChange={(event) => setUseVimMode(event.target.checked)}
-            />
-            Enable Vim Keybindings
-          </label>
+          <div className="settings-nav">
+            <button
+              type="button"
+              className={`settings-tab${activeTab === 'general' ? ' is-active' : ''}`}
+              onClick={() => setActiveTab('general')}
+            >
+              General
+            </button>
+            <button
+              type="button"
+              className={`settings-tab${activeTab === 'models' ? ' is-active' : ''}`}
+              onClick={() => setActiveTab('models')}
+            >
+              Models & API Keys
+            </button>
+            <button
+              type="button"
+              className={`settings-tab${activeTab === 'lsp' ? ' is-active' : ''}`}
+              onClick={() => setActiveTab('lsp')}
+            >
+              Language Servers
+            </button>
+          </div>
+          <div className="settings-content">
+            {activeTab === 'general' ? (
+              <label className="input-toggle">
+                <input
+                  type="checkbox"
+                  checked={useVimMode}
+                  onChange={(event) => setUseVimMode(event.target.checked)}
+                />
+                Enable Vim Keybindings
+              </label>
+            ) : null}
+            {activeTab === 'models' ? (
+              <>
+                <label className="settings-field">
+                  <span>OpenAI API Key</span>
+                  <input
+                    type="password"
+                    value={openaiKey}
+                    onChange={(event) => setOpenaiKey(event.target.value)}
+                    placeholder="sk-..."
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Gemini API Key</span>
+                  <input
+                    type="password"
+                    value={geminiKey}
+                    onChange={(event) => setGeminiKey(event.target.value)}
+                    placeholder="AIza..."
+                  />
+                </label>
+              </>
+            ) : null}
+            {activeTab === 'lsp' ? (
+              <>
+                <label className="settings-field">
+                  <span>TypeScript LSP Path</span>
+                  <input
+                    type="text"
+                    value={lspOverrides.typescript ?? ''}
+                    onChange={(event) =>
+                      setLspOverrides((prev) => ({
+                        ...prev,
+                        typescript: event.target.value
+                      }))
+                    }
+                    placeholder="vtsls or /path/to/vtsls"
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Python LSP Path</span>
+                  <input
+                    type="text"
+                    value={lspOverrides.python ?? ''}
+                    onChange={(event) =>
+                      setLspOverrides((prev) => ({
+                        ...prev,
+                        python: event.target.value
+                      }))
+                    }
+                    placeholder="pyright-langserver or /path/to/pyright-langserver"
+                  />
+                </label>
+              </>
+            ) : null}
+          </div>
           {loadError ? <div className="settings-error">{loadError}</div> : null}
         </div>
         <div className="settings-footer">
