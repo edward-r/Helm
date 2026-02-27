@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { AgentEvent } from './agent-events'
 
 const t = initTRPC.create()
+export { t }
 
 export type TextPart = { type: 'text'; text: string }
 export type ImagePart = { type: 'image'; mimeType: string; data: string }
@@ -112,6 +113,22 @@ export type ValidationReport = {
   improvements: string[]
 }
 
+export type SessionRecord = {
+  id: string
+  title: string
+  persona: string
+  created_at: number
+  updated_at: number
+}
+
+export type SessionMessageRecord = {
+  id: string
+  session_id: string
+  role: string
+  content: string
+  created_at: number
+}
+
 export type AppConfig = {
   openaiKey?: string
   geminiKey?: string
@@ -164,6 +181,23 @@ export const executorRunInputSchema = z.object({
   persona: z.string().optional()
 })
 
+export const createSessionInputSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  persona: z.string().min(1)
+})
+
+export const saveMessageInputSchema = z.object({
+  id: z.string().min(1),
+  sessionId: z.string().min(1),
+  role: z.string().min(1),
+  content: z.string()
+})
+
+export const getSessionMessagesInputSchema = z.object({
+  sessionId: z.string().min(1)
+})
+
 export const updateConfigInputSchema = z.object({
   openaiKey: z.string().optional(),
   geminiKey: z.string().optional(),
@@ -196,7 +230,35 @@ type ExecutorRouterDeps = {
   selectFiles: () => Promise<string[]>
 }
 
-export const createAppRouter = (deps: ExecutorRouterDeps) => {
+type CreateSessionInput = z.infer<typeof createSessionInputSchema>
+type SaveMessageInput = z.infer<typeof saveMessageInputSchema>
+type GetSessionMessagesInput = z.infer<typeof getSessionMessagesInputSchema>
+
+type SessionRouterDeps = {
+  createSession: (input: CreateSessionInput) => Promise<{ success: true }>
+  saveMessage: (input: SaveMessageInput) => Promise<{ success: true }>
+  getSessions: () => Promise<SessionRecord[]>
+  getSessionMessages: (input: GetSessionMessagesInput) => Promise<SessionMessageRecord[]>
+}
+
+export const createSessionRouter = (deps: SessionRouterDeps) => {
+  return t.router({
+    createSession: t.procedure
+      .input(createSessionInputSchema)
+      .mutation(async ({ input }) => deps.createSession(input)),
+    saveMessage: t.procedure
+      .input(saveMessageInputSchema)
+      .mutation(async ({ input }) => deps.saveMessage(input)),
+    getSessions: t.procedure.query(async () => deps.getSessions()),
+    getSessionMessages: t.procedure
+      .input(getSessionMessagesInputSchema)
+      .query(async ({ input }) => deps.getSessionMessages(input))
+  })
+}
+
+export type SessionRouter = ReturnType<typeof createSessionRouter>
+
+export const createAppRouter = (deps: ExecutorRouterDeps, sessionRouter: SessionRouter) => {
   return t.router({
     ping: t.procedure.query(() => 'pong'),
     executorRun: t.procedure
@@ -245,7 +307,8 @@ export const createAppRouter = (deps: ExecutorRouterDeps) => {
     resolveToolApproval: t.procedure
       .input(resolveToolApprovalInputSchema)
       .mutation(async ({ input }) => deps.resolveToolApproval(input)),
-    selectFiles: t.procedure.query(async () => deps.selectFiles())
+    selectFiles: t.procedure.query(async () => deps.selectFiles()),
+    ...sessionRouter._def.procedures
   })
 }
 

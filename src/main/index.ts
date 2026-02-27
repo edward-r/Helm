@@ -9,6 +9,7 @@ import type { AppRouter, ExecutorRunInput, ExecutorStreamEvent } from '../shared
 import { executeExecutor, type ExecutorInput } from './agent/executor'
 import { evaluatePrompt } from './agent/validator'
 import { fetchAvailableModels, getConfig, updateConfig } from './config-manager'
+import { sessionRouter } from './routers/session-router'
 import icon from '../../resources/icon.png?asset'
 
 let ipcHandler: ReturnType<typeof createIPCHandler<AppRouter>> | null = null
@@ -91,46 +92,49 @@ const streamExecutor = async (
   emit({ event: 'executor.complete', timestamp: timestamp(), result })
 }
 
-const appRouter = createAppRouter({
-  runExecutor,
-  streamExecutor,
-  getConfig: async () => getConfig(),
-  updateConfig: async (updates) => {
-    const next = await updateConfig(updates)
-    if (next.openaiKey) {
-      process.env.OPENAI_API_KEY = next.openaiKey
-    } else {
-      delete process.env.OPENAI_API_KEY
+const appRouter = createAppRouter(
+  {
+    runExecutor,
+    streamExecutor,
+    getConfig: async () => getConfig(),
+    updateConfig: async (updates) => {
+      const next = await updateConfig(updates)
+      if (next.openaiKey) {
+        process.env.OPENAI_API_KEY = next.openaiKey
+      } else {
+        delete process.env.OPENAI_API_KEY
+      }
+      if (next.geminiKey) {
+        process.env.GEMINI_API_KEY = next.geminiKey
+      } else {
+        delete process.env.GEMINI_API_KEY
+      }
+      return next
+    },
+    getModels: async () => fetchAvailableModels(),
+    validatePrompt: async ({ promptText, model }) => evaluatePrompt(promptText, model),
+    saveFileDirect: async ({ filePath, content }) => {
+      await fs.promises.writeFile(filePath, content, 'utf8')
+      return { success: true }
+    },
+    selectFiles: async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections']
+      })
+      return result.filePaths
+    },
+    resolveToolApproval: async ({ callId, approved }) => {
+      const resolver = pendingApprovals.get(callId)
+      if (!resolver) {
+        return { ok: false }
+      }
+      resolver({ approved })
+      pendingApprovals.delete(callId)
+      return { ok: true }
     }
-    if (next.geminiKey) {
-      process.env.GEMINI_API_KEY = next.geminiKey
-    } else {
-      delete process.env.GEMINI_API_KEY
-    }
-    return next
   },
-  getModels: async () => fetchAvailableModels(),
-  validatePrompt: async ({ promptText, model }) => evaluatePrompt(promptText, model),
-  saveFileDirect: async ({ filePath, content }) => {
-    await fs.promises.writeFile(filePath, content, 'utf8')
-    return { success: true }
-  },
-  selectFiles: async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections']
-    })
-    return result.filePaths
-  },
-  resolveToolApproval: async ({ callId, approved }) => {
-    const resolver = pendingApprovals.get(callId)
-    if (!resolver) {
-      return { ok: false }
-    }
-    resolver({ approved })
-    pendingApprovals.delete(callId)
-    return { ok: true }
-  }
-})
+  sessionRouter
+)
 
 function createWindow(): BrowserWindow {
   // Create the browser window.

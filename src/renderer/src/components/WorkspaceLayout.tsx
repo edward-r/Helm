@@ -9,6 +9,7 @@ import FocusEditorModal from './FocusEditorModal'
 import InputPanel from './InputPanel'
 import MessageBubble from './MessageBubble'
 import ResearchWorkspace from './ResearchWorkspace'
+import SidebarHistory from './SidebarHistory'
 import SettingsModal from './SettingsModal'
 import TestPlayground from './TestPlayground'
 import TimelineFeed from './TimelineFeed'
@@ -302,6 +303,7 @@ const WorkspaceLayout = () => {
             Automation Runner
           </button>
         </div>
+        <SidebarHistory />
         <label className="input-field">
           <span>Persona</span>
           <select value={activePersona} onChange={(event) => setActivePersona(event.target.value)}>

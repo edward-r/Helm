@@ -351,7 +351,8 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
       summary: 'Tool execution plan prepared.'
     })
 
-    const assistantMessage = buildAssistantMessage('', validation.value)
+    const toolCallSummary = formatToolCallSummary(validation.value)
+    const assistantMessage = buildAssistantMessage(toolCallSummary, validation.value)
     const toolMessages = await buildToolMessages(
       validation.value,
       toolMap,
@@ -807,6 +808,23 @@ const truncateBestKnownText = (value: string): string => {
     return normalized
   }
   return `${normalized.slice(0, Math.max(0, BEST_KNOWN_TEXT_MAX - 3))}...`
+}
+
+const formatToolCallSummary = (toolCalls: ToolCall[]): string => {
+  if (toolCalls.length === 0) {
+    return ''
+  }
+  const lines = toolCalls.map((call) => {
+    const name = call.name?.trim() || 'unknown_tool'
+    let args = ''
+    try {
+      args = JSON.stringify(call.arguments)
+    } catch {
+      args = '{}'
+    }
+    return `${name} ${args}`
+  })
+  return `Tool calls:\n${lines.join('\n')}`
 }
 
 const validateToolCalls = (
