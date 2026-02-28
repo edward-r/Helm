@@ -135,6 +135,10 @@ const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem
     }
   }
 
+  if (event.event === 'reasoning') {
+    return null
+  }
+
   if (event.event === 'thinking') {
     return buildThinkingItem(event, index)
   }

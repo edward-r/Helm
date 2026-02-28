@@ -31,6 +31,7 @@ type AgentState = {
   pendingApproval: { callId: string; toolName: string; plan: ToolExecutionPlan } | null
   activeSessionId: string | null
   sessions: SessionRecord[]
+  streamingReasoning: string
   setSystemPrompt: (value: string) => void
   setUserIntent: (value: string) => void
   setMaxIterations: (value: string) => void
@@ -65,11 +66,15 @@ const parseMessages = (records: Array<{ role: string; content: string }>): Messa
         const parsed = JSON.parse(record.content) as {
           content?: string
           toolCalls?: unknown
+          reasoning?: string
         }
         const content = typeof parsed.content === 'string' ? parsed.content : record.content
         const message: Message = { role: 'assistant', content }
         if (Array.isArray(parsed.toolCalls)) {
           message.toolCalls = parsed.toolCalls
+        }
+        if (typeof parsed.reasoning === 'string' && parsed.reasoning.trim().length > 0) {
+          message.reasoning = parsed.reasoning
         }
         return message
       } catch {
@@ -99,17 +104,33 @@ const buildStoredExecutorResult = (messages: Message[], fallbackText: string): E
     lastAssistant && typeof lastAssistant.content === 'string'
       ? lastAssistant.content
       : fallbackText
+  const reasoning = lastAssistant?.reasoning
   return {
     ok: true,
     value: {
       text,
-      messages
+      messages,
+      ...(reasoning ? { reasoning } : {})
     }
   }
 }
 
 const extractChatHistory = (messages: Message[]): Message[] => {
   return messages.filter((message) => message.role !== 'system')
+}
+
+const attachReasoningToLastAssistant = (messages: Message[], reasoning: string): Message[] => {
+  if (!reasoning.trim()) {
+    return messages
+  }
+  const next = [...messages]
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    if (next[i]?.role === 'assistant') {
+      next[i] = { ...next[i], reasoning }
+      break
+    }
+  }
+  return next
 }
 
 const normalizeMaxIterations = (value: string): number | undefined => {
@@ -144,6 +165,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingApproval: null,
   activeSessionId: null,
   sessions: [],
+  streamingReasoning: '',
   setSystemPrompt: (value) => set({ systemPrompt: value }),
   setUserIntent: (value) => set({ userIntent: value }),
   setMaxIterations: (value) => set({ maxIterations: value }),
@@ -166,7 +188,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       events: [],
       finalResult: null,
       streamError: null,
-      pendingApproval: null
+      pendingApproval: null,
+      streamingReasoning: ''
     }),
   clearHistory: () =>
     set({
@@ -175,7 +198,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       finalResult: null,
       validationReport: null,
       isValidating: false,
-      activeSessionId: null
+      activeSessionId: null,
+      streamingReasoning: ''
     }),
   runValidation: async (text) => {
     set({ isValidating: true })
@@ -218,7 +242,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       streamError: null,
       pendingApproval: null,
       isStreaming: false,
-      userIntent: ''
+      userIntent: '',
+      streamingReasoning: ''
     })
   },
   loadSessionMessages: async (sessionId: string) => {
@@ -251,7 +276,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         isValidating: false,
         streamError: null,
         pendingApproval: null,
-        isStreaming: false
+        isStreaming: false,
+        streamingReasoning: ''
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load session messages.'
@@ -287,7 +313,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       validationReport: null,
       streamError: null,
       isStreaming: true,
-      pendingApproval: null
+      pendingApproval: null,
+      streamingReasoning: ''
     })
 
     let sessionIdForRun = activeSessionId
@@ -340,15 +367,34 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
     }
 
+    let accumulatedReasoning = ''
+
     activeSubscription = trpcClient.executorStream.subscribe(input, {
       onData: (event) => {
         const streamEvent = event as ExecutorStreamEvent
+        if (streamEvent.event === 'reasoning') {
+          accumulatedReasoning += streamEvent.delta
+          set((state) => {
+            const nextHistory = [...state.chatHistory]
+            for (let i = nextHistory.length - 1; i >= 0; i -= 1) {
+              if (nextHistory[i]?.role === 'assistant') {
+                nextHistory[i] = { ...nextHistory[i], reasoning: accumulatedReasoning }
+                break
+              }
+            }
+            return { streamingReasoning: accumulatedReasoning, chatHistory: nextHistory }
+          })
+          return
+        }
         if (streamEvent.event === 'executor.complete' && streamEvent.result.ok) {
           void get().runValidation(streamEvent.result.value.text)
           if (sessionIdForRun) {
+            const finalReasoning =
+              streamEvent.result.value.reasoning ?? (accumulatedReasoning || undefined)
             const assistantPayload = JSON.stringify({
               content: streamEvent.result.value.text,
-              toolCalls: streamEvent.result.value.toolCalls ?? []
+              toolCalls: streamEvent.result.value.toolCalls ?? [],
+              reasoning: finalReasoning
             })
             void (async () => {
               try {
@@ -356,7 +402,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   id: crypto.randomUUID(),
                   sessionId: sessionIdForRun,
                   role: 'assistant',
-                  content: assistantPayload
+                  content: assistantPayload,
+                  ...(finalReasoning ? { reasoning: finalReasoning } : {})
                 })
                 await get().loadSessions()
               } catch (error) {
@@ -374,20 +421,36 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (streamEvent.event === 'executor.complete') {
             if (streamEvent.result.ok) {
               const fullHistory = streamEvent.result.value.messages
-              nextState.chatHistory = fullHistory
-                ? extractChatHistory(fullHistory)
+              const finalReasoning =
+                streamEvent.result.value.reasoning ?? (accumulatedReasoning || undefined)
+              const historyWithReasoning =
+                fullHistory && finalReasoning
+                  ? attachReasoningToLastAssistant(fullHistory, finalReasoning)
+                  : fullHistory
+              nextState.chatHistory = historyWithReasoning
+                ? extractChatHistory(historyWithReasoning)
                 : [
                     ...state.chatHistory,
                     { role: 'user', content: intentForRun },
                     {
                       role: 'assistant',
-                      content: streamEvent.result.value.text
+                      content: streamEvent.result.value.text,
+                      ...(finalReasoning ? { reasoning: finalReasoning } : {})
                     }
                   ]
+              if (finalReasoning) {
+                nextState.finalResult = {
+                  ...streamEvent.result,
+                  value: { ...streamEvent.result.value, reasoning: finalReasoning }
+                }
+              }
             }
-            nextState.finalResult = streamEvent.result
+            if (!nextState.finalResult) {
+              nextState.finalResult = streamEvent.result
+            }
             nextState.isStreaming = false
             nextState.pendingApproval = null
+            nextState.streamingReasoning = ''
           }
 
           if (streamEvent.event === 'tool_approval_required') {
@@ -403,11 +466,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       },
       onError: (error) => {
         const message = error instanceof Error ? error.message : 'Unknown error'
-        set({ streamError: message, isStreaming: false, pendingApproval: null })
+        set({
+          streamError: message,
+          isStreaming: false,
+          pendingApproval: null,
+          streamingReasoning: ''
+        })
         stopActiveSubscription()
       },
       onComplete: () => {
-        set({ isStreaming: false, pendingApproval: null })
+        set({ isStreaming: false, pendingApproval: null, streamingReasoning: '' })
         stopActiveSubscription()
       }
     })

@@ -55,6 +55,7 @@ export type ToolCallRequest =
 export type LLMResult = {
   content: string | null
   toolCalls?: ToolCall[]
+  reasoning?: string
 }
 
 export type Message = {
@@ -64,4 +65,5 @@ export type Message = {
   tool_calls?: ToolCallRequest[]
   toolCallId?: string
   tool_call_id?: string
+  reasoning?: string
 }

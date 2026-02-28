@@ -49,6 +49,7 @@ export type ExecutorInput = {
   history?: Message[]
   persona?: string
   onThinkingEvent?: (event: ThinkingEvent) => void
+  onReasoningEvent?: (event: { delta: string }) => void
   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
   onToolEvent?: (event: ToolExecutionEvent) => void
 }
@@ -169,6 +170,8 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
   let lastPlans: ToolExecutionPlan[] | undefined
   let bestKnownText: string | null = null
 
+  let reasoningTrace = ''
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const callIndex = iteration + 1
     emitThinkingEvent(input.onThinkingEvent, {
@@ -234,14 +237,43 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
     // Plain-text finalization: when no tool calls are present, return the
     // assistant text immediately and append it once to history.
     if (normalized.kind === 'finalText') {
-      const assistantMessage = buildAssistantMessage(normalized.text, undefined)
+      let parsedResponse: { reasoning: string; final_text: string } = {
+        reasoning: '',
+        final_text: normalized.text
+      }
+      try {
+        const parsed = JSON.parse(normalized.text)
+        if (isRecord(parsed)) {
+          const reasoning =
+            typeof parsed.reasoning === 'string' ? parsed.reasoning : parsedResponse.reasoning
+          const finalText =
+            typeof parsed.final_text === 'string' ? parsed.final_text : parsedResponse.final_text
+          parsedResponse = { reasoning, final_text: finalText }
+        }
+      } catch {
+        // fall back to raw text
+      }
+
+      if (parsedResponse.reasoning.trim()) {
+        reasoningTrace = reasoningTrace
+          ? `${reasoningTrace}\n${parsedResponse.reasoning}`
+          : parsedResponse.reasoning
+        emitReasoningEvent(input.onReasoningEvent, { delta: parsedResponse.reasoning })
+      }
+
+      const assistantMessage = buildAssistantMessage(
+        parsedResponse.final_text,
+        undefined,
+        reasoningTrace
+      )
       const finalHistory = appendMessages(currentHistory, assistantMessage)
       return {
         ok: true,
         value: {
-          text: normalized.text,
+          text: parsedResponse.final_text,
           messages: finalHistory,
-          ...(lastPlans ? { toolPlans: lastPlans } : {})
+          ...(lastPlans ? { toolPlans: lastPlans } : {}),
+          ...(reasoningTrace ? { reasoning: reasoningTrace } : {})
         }
       }
     }
@@ -453,7 +485,11 @@ const createInitialHistory = async (
   return [{ role: 'system', content: systemPrompt }, userMessage]
 }
 
-const buildAssistantMessage = (content: string | null, toolCalls?: ToolCall[]): Message => {
+const buildAssistantMessage = (
+  content: string | null,
+  toolCalls?: ToolCall[],
+  reasoning?: string
+): Message => {
   const message: Message = {
     role: 'assistant',
     content: content ?? ''
@@ -461,6 +497,10 @@ const buildAssistantMessage = (content: string | null, toolCalls?: ToolCall[]): 
 
   if (toolCalls && toolCalls.length > 0) {
     message.toolCalls = toolCalls
+  }
+
+  if (reasoning && reasoning.trim().length > 0) {
+    message.reasoning = reasoning
   }
 
   return message
@@ -621,6 +661,16 @@ const emitThinkingEvent = (
     return
   }
   handler({ event: 'thinking', ...payload })
+}
+
+const emitReasoningEvent = (
+  handler: ExecutorInput['onReasoningEvent'],
+  payload: { delta: string }
+): void => {
+  if (!handler) {
+    return
+  }
+  handler(payload)
 }
 
 const emitToolEvent = (

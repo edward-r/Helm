@@ -195,6 +195,7 @@ const callOpenAIChatCompletions = async (
       model,
       temperature: 0.2,
       messages: payloadMessages,
+      response_format: { type: 'json_object' },
       ...(openAiTools ? { tools: openAiTools } : {})
     })
   })
@@ -254,6 +255,7 @@ const callOpenAIResponses = async (
     body: JSON.stringify({
       model,
       input,
+      text: { format: { type: 'json_object' } },
       ...(openAiTools ? { tools: openAiTools } : {})
     })
   })

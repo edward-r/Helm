@@ -72,6 +72,9 @@ const streamExecutor = async (
   const onThinkingEvent: ExecutorInput['onThinkingEvent'] = (event) => {
     emit({ ...event, timestamp: timestamp() })
   }
+  const onReasoningEvent: ExecutorInput['onReasoningEvent'] = (event) => {
+    emit({ event: 'reasoning', timestamp: timestamp(), delta: event.delta })
+  }
   const onToolEvent: ExecutorInput['onToolEvent'] = (event) => {
     emit({ ...event, timestamp: timestamp() })
   }
@@ -85,6 +88,7 @@ const streamExecutor = async (
     history: input.history,
     persona: input.persona,
     onThinkingEvent,
+    onReasoningEvent,
     onToolEvent,
     onToolApproval: createOnToolApproval(autoApprove, emit)
   })

@@ -31,6 +31,27 @@ const MessageBubble = ({ result }: MessageBubbleProps) => {
   const statusClass = result.ok ? 'is-success' : 'is-error'
   const title = result.ok ? 'Assistant' : 'Execution Error'
   const promptText = result.ok ? result.value.text : ''
+  const normalizeReasoning = (value: string | undefined): string => {
+    if (!value) {
+      return ''
+    }
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return ''
+    }
+    const lowered = trimmed.toLowerCase()
+    if (['auto', 'short', 'detailed', 'none', 'full'].includes(lowered)) {
+      return ''
+    }
+    return trimmed
+  }
+
+  const reasoning = result.ok
+    ? normalizeReasoning(
+        [...result.value.messages].reverse().find((message) => message.role === 'assistant')
+          ?.reasoning ?? result.value.reasoning
+      )
+    : ''
 
   const handleCopy = useCallback(() => {
     if (!promptText) {
@@ -104,6 +125,17 @@ const MessageBubble = ({ result }: MessageBubbleProps) => {
             Edit / Source
           </button>
         </div>
+      ) : null}
+      {reasoning ? (
+        <details className="mb-4 bg-slate-800/50 rounded-md border border-slate-700 overflow-hidden">
+          <summary className="px-4 py-2 cursor-pointer text-sm text-slate-400 hover:text-slate-300 font-medium select-none flex items-center">
+            <span className="mr-2">🧠</span>
+            View AI Reasoning
+          </summary>
+          <div className="p-4 border-t border-slate-700 text-sm text-slate-300 italic whitespace-pre-wrap">
+            {reasoning}
+          </div>
+        </details>
       ) : null}
       <div className="message-body markdown-body">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>

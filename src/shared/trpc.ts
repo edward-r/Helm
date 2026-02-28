@@ -62,6 +62,7 @@ export type Message = {
   tool_calls?: ToolCallRequest[]
   toolCallId?: string
   tool_call_id?: string
+  reasoning?: string
 }
 
 export type ExecutorErrorCode =
@@ -95,6 +96,7 @@ export type ExecutorSuccess = {
     messages: Message[]
     toolCalls?: ToolCall[]
     toolPlans?: ToolExecutionPlan[]
+    reasoning?: string
   }
 }
 
@@ -144,6 +146,7 @@ export type ModelInfo = {
   toolCall?: boolean
   inputModalities?: string[]
   reasoning?: boolean
+  capabilities?: string[]
 }
 
 export type ExecutorRunInput = {
@@ -168,6 +171,7 @@ export type ToolApprovalRequiredEvent = {
 export type ExecutorStreamEvent =
   | (AgentEvent & { timestamp: string })
   | ToolApprovalRequiredEvent
+  | { event: 'reasoning'; timestamp: string; delta: string }
   | { event: 'executor.complete'; timestamp: string; result: ExecutorResult }
 
 export const executorRunInputSchema = z.object({
@@ -191,7 +195,8 @@ export const saveMessageInputSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
   role: z.string().min(1),
-  content: z.string()
+  content: z.string(),
+  reasoning: z.string().optional()
 })
 
 export const getSessionMessagesInputSchema = z.object({

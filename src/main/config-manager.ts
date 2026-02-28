@@ -654,6 +654,17 @@ export const fetchAvailableModels = async (): Promise<ModelInfo[]> => {
     }
   }
 
+  const thinkingModelId = 'gemini-2.0-flash-thinking-exp-01-21'
+  if (!filtered.some((model) => model.id === thinkingModelId)) {
+    filtered.push({
+      id: thinkingModelId,
+      name: 'Gemini 2.0 Flash Thinking (Experimental)',
+      provider: 'google',
+      capabilities: ['chat', 'reasoning'],
+      reasoning: true
+    })
+  }
+
   return filtered.sort((left, right) => {
     const providerCompare = left.provider.localeCompare(right.provider)
     if (providerCompare !== 0) {

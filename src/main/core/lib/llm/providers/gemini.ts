@@ -80,10 +80,15 @@ const GeminiResponseSchema = z.object({
 
 type GeminiResponse = z.infer<typeof GeminiResponseSchema>
 
+type GeminiGenerationConfig = {
+  temperature: number
+  responseMimeType?: string
+}
+
 type GeminiRequestBody = {
   contents: GeminiContent[]
   systemInstruction?: GeminiContent
-  generationConfig: { temperature: number }
+  generationConfig: GeminiGenerationConfig
   tools?: GeminiTool[]
 }
 
@@ -248,9 +253,14 @@ const buildGeminiRequestBody = (
     throw new Error('Gemini requests require at least one user message.')
   }
 
+  const generationConfig: GeminiGenerationConfig = {
+    temperature: 0.2,
+    responseMimeType: 'application/json'
+  }
+
   const payload: GeminiRequestBody = {
     contents,
-    generationConfig: { temperature: 0.2 }
+    generationConfig
   }
 
   const geminiTools = toGeminiTools(tools)
