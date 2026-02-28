@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { trpcClient } from '../trpc'
 import { useAgentStore } from './useAgentStore'
 import { useAppStore } from './useAppStore'
-import type { ExecutorRunInput, ExecutorStreamEvent } from '../../../shared/trpc'
+import type { ExecuteAgentInput, ExecutorStreamEvent } from '../../../shared/trpc'
 
 type BatchStatus = 'idle' | 'running' | 'completed'
 type ResultStatus = 'pending' | 'running' | 'success' | 'error'
@@ -104,16 +104,16 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
           resolve()
         }
 
-        const input: ExecutorRunInput = {
+        const input: ExecuteAgentInput = {
           systemPrompt,
-          userIntent: trimmedPrompt,
+          promptText: trimmedPrompt,
           model: trimmedModel,
           persona: useAppStore.getState().activePersona,
           attachments: [filePath],
           autoApprove: true
         }
 
-        const subscription = trpcClient.executorStream.subscribe(input, {
+        const subscription = trpcClient.executeAgent.subscribe(input, {
           onData: (event) => {
             const streamEvent = event as ExecutorStreamEvent
             if (streamEvent.event !== 'executor.complete') {

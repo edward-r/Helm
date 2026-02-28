@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
 import { useAppStore } from './useAppStore'
-import type { ExecutorResult, ExecutorRunInput, ExecutorStreamEvent } from '../../../shared/trpc'
+import type { ExecuteAgentInput, ExecutorResult, ExecutorStreamEvent } from '../../../shared/trpc'
 
 type Unsubscribable = { unsubscribe: () => void }
 
@@ -47,14 +47,14 @@ export const useResearchStore = create<ResearchState>((set, get) => ({
     stopActiveSubscription()
     set({ events: [], finalDossier: null, streamError: null, isStreaming: true })
 
-    const input: ExecutorRunInput = {
+    const input: ExecuteAgentInput = {
       systemPrompt: RESEARCH_SYSTEM_PROMPT,
-      userIntent: topic,
+      promptText: topic,
       model: trimmedModel,
       autoApprove: true
     }
 
-    activeSubscription = trpcClient.executorStream.subscribe(input, {
+    activeSubscription = trpcClient.executeAgent.subscribe(input, {
       onData: (event) => {
         const streamEvent = event as ExecutorStreamEvent
         set((state) => {

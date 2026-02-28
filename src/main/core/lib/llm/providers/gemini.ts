@@ -162,7 +162,8 @@ const callGeminiOnce = async (
   const normalizedVersion = normalizeGeminiApiVersion(apiVersion)
   const modelId = normalizeGeminiModelId(model)
   const url = `${endpointBase}/${normalizedVersion}/models/${modelId}:generateContent?key=${apiKey}`
-  const body = buildGeminiRequestBody(messages, tools)
+  const responseMimeType = shouldForceJsonOutput(model) ? 'application/json' : undefined
+  const body = buildGeminiRequestBody(messages, tools, responseMimeType)
 
   const response = await fetch(url, {
     method: 'POST',
@@ -240,7 +241,8 @@ export const callGemini = async (
 
 const buildGeminiRequestBody = (
   messages: Message[],
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  responseMimeType?: string
 ): GeminiRequestBody => {
   const systemMessages = messages.filter((message) => message.role === 'system')
 
@@ -255,7 +257,7 @@ const buildGeminiRequestBody = (
 
   const generationConfig: GeminiGenerationConfig = {
     temperature: 0.2,
-    responseMimeType: 'application/json'
+    ...(responseMimeType ? { responseMimeType } : {})
   }
 
   const payload: GeminiRequestBody = {
@@ -278,6 +280,15 @@ const buildGeminiRequestBody = (
   }
 
   return payload
+}
+
+const shouldForceJsonOutput = (modelId: string): boolean => {
+  const normalized = modelId.trim().toLowerCase()
+  const isReasoning =
+    /(^|[^a-z0-9])o(?:1|3|4|5)(?:[^a-z0-9]|$)/i.test(normalized) ||
+    normalized.includes('thinking') ||
+    normalized.includes('gpt-5')
+  return !isReasoning
 }
 
 const extractGeminiText = (response: GeminiResponse): string | null => {

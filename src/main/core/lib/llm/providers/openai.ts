@@ -113,6 +113,15 @@ const shouldUseChatCompletions = (model: string): boolean => {
   return true
 }
 
+const shouldForceJsonOutput = (modelId: string): boolean => {
+  const normalized = modelId.trim().toLowerCase()
+  const isReasoning =
+    /(^|[^a-z0-9])o(?:1|3|4|5)(?:[^a-z0-9]|$)/i.test(normalized) ||
+    normalized.includes('thinking') ||
+    normalized.includes('gpt-5')
+  return !isReasoning
+}
+
 const toErrorMessage = (error: unknown): string => {
   if (typeof error === 'string') return error
   if (error && typeof error === 'object' && 'message' in error) {
@@ -184,6 +193,7 @@ const callOpenAIChatCompletions = async (
     messages.map(toOpenAIMessageAsync)
   )
   const openAiTools = toOpenAIChatTools(tools)
+  const forceJson = shouldForceJsonOutput(model)
 
   const response = await fetch(OPENAI_CHAT_ENDPOINT, {
     method: 'POST',
@@ -195,7 +205,7 @@ const callOpenAIChatCompletions = async (
       model,
       temperature: 0.2,
       messages: payloadMessages,
-      response_format: { type: 'json_object' },
+      ...(forceJson ? { response_format: { type: 'json_object' } } : {}),
       ...(openAiTools ? { tools: openAiTools } : {})
     })
   })
@@ -245,6 +255,7 @@ const callOpenAIResponses = async (
     messages.map(toOpenAIResponsesInputMessageAsync)
   )
   const openAiTools = toOpenAIResponsesTools(tools)
+  const forceJson = shouldForceJsonOutput(model)
 
   const response = await fetch(OPENAI_RESPONSES_ENDPOINT, {
     method: 'POST',
@@ -255,7 +266,7 @@ const callOpenAIResponses = async (
     body: JSON.stringify({
       model,
       input,
-      text: { format: { type: 'json_object' } },
+      ...(forceJson ? { text: { format: { type: 'json_object' } } } : {}),
       ...(openAiTools ? { tools: openAiTools } : {})
     })
   })

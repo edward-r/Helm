@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import { trpcClient } from '../trpc'
 import { useAppStore } from './useAppStore'
-import type { ExecutorRunInput, ExecutorStreamEvent, Message } from '../../../shared/trpc'
+import type { ExecuteAgentInput, ExecutorStreamEvent, Message } from '../../../shared/trpc'
 
 type Unsubscribable = { unsubscribe: () => void }
 
@@ -78,14 +78,14 @@ export const useTestStore = create<TestState>((set, get) => ({
     stopActiveSubscription()
     set({ chatHistory: nextHistory, isStreaming: true, streamError: null })
 
-    const input: ExecutorRunInput = {
+    const input: ExecuteAgentInput = {
       systemPrompt: trimmedSystemPrompt,
-      userIntent: trimmedIntent,
+      promptText: trimmedIntent,
       model: trimmedModel,
       history: chatHistory
     }
 
-    activeSubscription = trpcClient.executorStream.subscribe(input, {
+    activeSubscription = trpcClient.executeAgent.subscribe(input, {
       onData: (event) => {
         const streamEvent = event as ExecutorStreamEvent
         if (streamEvent.event !== 'executor.complete') {

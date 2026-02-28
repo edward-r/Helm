@@ -149,9 +149,16 @@ export type ModelInfo = {
   capabilities?: string[]
 }
 
-export type ExecutorRunInput = {
-  systemPrompt: string
+export type GenerateDraftInput = {
   userIntent: string
+  useSmartContext: boolean
+  useSeriesGeneration: boolean
+  model: string
+}
+
+export type ExecuteAgentInput = {
+  systemPrompt: string
+  promptText: string
   model: string
   maxIterations?: number
   autoApprove?: boolean
@@ -171,12 +178,20 @@ export type ToolApprovalRequiredEvent = {
 export type ExecutorStreamEvent =
   | (AgentEvent & { timestamp: string })
   | ToolApprovalRequiredEvent
+  | { event: 'system_prompt'; timestamp: string; prompt: string }
   | { event: 'reasoning'; timestamp: string; delta: string }
   | { event: 'executor.complete'; timestamp: string; result: ExecutorResult }
 
-export const executorRunInputSchema = z.object({
-  systemPrompt: z.string().min(1),
+export const generateDraftInputSchema = z.object({
   userIntent: z.string().min(1),
+  useSmartContext: z.boolean(),
+  useSeriesGeneration: z.boolean(),
+  model: z.string().min(1)
+})
+
+export const executeAgentInputSchema = z.object({
+  systemPrompt: z.string().min(1),
+  promptText: z.string().min(1),
   model: z.string().min(1),
   maxIterations: z.number().int().positive().optional(),
   autoApprove: z.boolean().optional(),
@@ -221,9 +236,9 @@ export const saveFileDirectInputSchema = z.object({
 })
 
 type ExecutorRouterDeps = {
-  runExecutor: (input: ExecutorRunInput) => Promise<ExecutorResult>
-  streamExecutor: (
-    input: ExecutorRunInput,
+  generateDraft: (input: GenerateDraftInput) => Promise<string>
+  executeAgent: (
+    input: ExecuteAgentInput,
     emit: (event: ExecutorStreamEvent) => void
   ) => Promise<void>
   getConfig: () => Promise<AppConfig>
@@ -266,10 +281,10 @@ export type SessionRouter = ReturnType<typeof createSessionRouter>
 export const createAppRouter = (deps: ExecutorRouterDeps, sessionRouter: SessionRouter) => {
   return t.router({
     ping: t.procedure.query(() => 'pong'),
-    executorRun: t.procedure
-      .input(executorRunInputSchema)
-      .mutation(async ({ input }) => deps.runExecutor(input)),
-    executorStream: t.procedure.input(executorRunInputSchema).subscription(({ input }) => {
+    generateDraft: t.procedure
+      .input(generateDraftInputSchema)
+      .mutation(async ({ input }) => deps.generateDraft(input)),
+    executeAgent: t.procedure.input(executeAgentInputSchema).subscription(({ input }) => {
       return observable<ExecutorStreamEvent>((observer) => {
         let active = true
 
@@ -281,7 +296,7 @@ export const createAppRouter = (deps: ExecutorRouterDeps, sessionRouter: Session
         }
 
         void deps
-          .streamExecutor(input, emit)
+          .executeAgent(input, emit)
           .then(() => {
             if (active) {
               observer.complete()
@@ -289,7 +304,7 @@ export const createAppRouter = (deps: ExecutorRouterDeps, sessionRouter: Session
           })
           .catch((error) => {
             if (active) {
-              observer.error(error instanceof Error ? error : new Error('Executor stream failed.'))
+              observer.error(error instanceof Error ? error : new Error('Execute agent failed.'))
             }
           })
 

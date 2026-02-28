@@ -5,8 +5,15 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createIPCHandler } from 'electron-trpc/main'
 import { createAppRouter } from '../shared/trpc'
-import type { AppRouter, ExecutorRunInput, ExecutorStreamEvent } from '../shared/trpc'
+import type {
+  AppRouter,
+  ExecuteAgentInput,
+  ExecutorStreamEvent,
+  GenerateDraftInput
+} from '../shared/trpc'
 import { executeExecutor, type ExecutorInput } from './agent/executor'
+import { promptGeneratorService } from './agent/prompt-generator-service'
+import { gatherSmartContext } from './agent/smart-context'
 import { evaluatePrompt } from './agent/validator'
 import { fetchAvailableModels, getConfig, updateConfig } from './config-manager'
 import { sessionRouter } from './routers/session-router'
@@ -49,28 +56,35 @@ const createOnToolApproval = (
   }
 }
 
-const runExecutor = async (input: ExecutorRunInput) => {
-  const autoApprove = input.autoApprove === true
-  const onToolApproval = autoApprove ? createOnToolApproval(true, () => undefined) : undefined
-  return executeExecutor({
-    systemPrompt: input.systemPrompt,
+const generateDraft = async (input: GenerateDraftInput): Promise<string> => {
+  let smartContextXml = ''
+  if (input.useSmartContext) {
+    try {
+      const smartContext = await gatherSmartContext(input.userIntent, undefined, input.model)
+      smartContextXml = smartContext.xml
+    } catch (error) {
+      console.warn('Smart Context gathering failed. Proceeding without context.', error)
+    }
+  }
+
+  return promptGeneratorService.generateContract({
     userIntent: input.userIntent,
+    smartContextXml,
     model: input.model,
-    maxIterations: input.maxIterations,
-    attachments: input.attachments,
-    history: input.history,
-    persona: input.persona,
-    onToolApproval
+    useSeriesGeneration: input.useSeriesGeneration
   })
 }
 
-const streamExecutor = async (
-  input: ExecutorRunInput,
+const executeAgent = async (
+  input: ExecuteAgentInput,
   emit: (event: ExecutorStreamEvent) => void
 ): Promise<void> => {
   const autoApprove = input.autoApprove === true
   const onThinkingEvent: ExecutorInput['onThinkingEvent'] = (event) => {
     emit({ ...event, timestamp: timestamp() })
+  }
+  const onSystemPrompt: ExecutorInput['onSystemPrompt'] = (prompt) => {
+    emit({ event: 'system_prompt', timestamp: timestamp(), prompt })
   }
   const onReasoningEvent: ExecutorInput['onReasoningEvent'] = (event) => {
     emit({ event: 'reasoning', timestamp: timestamp(), delta: event.delta })
@@ -81,12 +95,13 @@ const streamExecutor = async (
 
   const result = await executeExecutor({
     systemPrompt: input.systemPrompt,
-    userIntent: input.userIntent,
+    userIntent: input.promptText,
     model: input.model,
     maxIterations: input.maxIterations,
     attachments: input.attachments,
     history: input.history,
     persona: input.persona,
+    onSystemPrompt,
     onThinkingEvent,
     onReasoningEvent,
     onToolEvent,
@@ -98,8 +113,8 @@ const streamExecutor = async (
 
 const appRouter = createAppRouter(
   {
-    runExecutor,
-    streamExecutor,
+    generateDraft,
+    executeAgent,
     getConfig: async () => getConfig(),
     updateConfig: async (updates) => {
       const next = await updateConfig(updates)

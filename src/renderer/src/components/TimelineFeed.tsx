@@ -115,6 +115,9 @@ const buildToolErrorItem = (
 }
 
 const mapEventToItem = (event: ExecutorStreamEvent, index: number): TimelineItem | null => {
+  if (event.event === 'system_prompt') {
+    return null
+  }
   if (event.event === 'executor.complete') {
     return {
       id: `complete-${index}-${event.timestamp}`,
@@ -160,6 +163,7 @@ const TimelineFeed = ({ events, userIntent, isStreaming }: TimelineFeedProps) =>
   const agentEvents = useAgentStore((state) => state.events)
   const agentIntent = useAgentStore((state) => state.userIntent)
   const agentStreaming = useAgentStore((state) => state.isStreaming)
+  const systemPromptForRun = useAgentStore((state) => state.systemPromptForRun)
 
   const resolvedEvents = events ?? agentEvents
   const resolvedIntent = userIntent ?? agentIntent
@@ -188,7 +192,7 @@ const TimelineFeed = ({ events, userIntent, isStreaming }: TimelineFeedProps) =>
     return [intentItem, ...timelineItems]
   }, [resolvedEvents, resolvedIntent, resolvedStreaming])
 
-  if (items.length === 0) {
+  if (items.length === 0 && !systemPromptForRun) {
     return (
       <div className="timeline-feed">
         <div className="timeline-header">
@@ -210,6 +214,12 @@ const TimelineFeed = ({ events, userIntent, isStreaming }: TimelineFeedProps) =>
           <div className="timeline-subtitle">Live signals from the agent</div>
         </div>
       </div>
+      {systemPromptForRun ? (
+        <details className="timeline-prompt">
+          <summary className="timeline-prompt-summary">System Prompt (Current Run)</summary>
+          <pre className="timeline-prompt-body">{systemPromptForRun}</pre>
+        </details>
+      ) : null}
       <div className="timeline-list">
         {items.map((item) => (
           <div key={item.id} className="timeline-item">

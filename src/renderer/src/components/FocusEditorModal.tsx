@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { useAppStore } from '../store/useAppStore'
+import { useAgentStore } from '../store/useAgentStore'
 import CodeEditor from './CodeEditor'
 
 const FocusEditorModal = () => {
   const focusEditor = useAppStore((state) => state.focusEditor)
   const closeFocusEditor = useAppStore((state) => state.closeFocusEditor)
+  const executeIntent = useAgentStore((state) => state.executeIntent)
 
   const [draft, setDraft] = useState(focusEditor?.content ?? '')
 
@@ -13,23 +15,27 @@ const FocusEditorModal = () => {
     setDraft(focusEditor?.content ?? '')
   }, [focusEditor])
 
-  const handleSave = useCallback(() => {
-    if (!focusEditor) {
-      return
-    }
-    focusEditor.onSave(draft)
-    closeFocusEditor()
-  }, [closeFocusEditor, draft, focusEditor])
-
-  const handleEditorSave = useCallback(
-    (newText: string) => {
+  const handleExecute = useCallback(
+    (nextText: string) => {
       if (!focusEditor) {
         return
       }
-      focusEditor.onSave(newText)
+      focusEditor.onSave(nextText)
+      void executeIntent(nextText)
       closeFocusEditor()
     },
-    [closeFocusEditor, focusEditor]
+    [closeFocusEditor, executeIntent, focusEditor]
+  )
+
+  const handleSave = useCallback(() => {
+    handleExecute(draft)
+  }, [draft, handleExecute])
+
+  const handleEditorSave = useCallback(
+    (newText: string) => {
+      handleExecute(newText)
+    },
+    [handleExecute]
   )
 
   if (!focusEditor) {
@@ -45,8 +51,11 @@ const FocusEditorModal = () => {
             <button type="button" className="button is-secondary" onClick={closeFocusEditor}>
               Cancel
             </button>
-            <button type="button" className="button is-primary" onClick={handleSave}>
+            <button type="button" className="button is-secondary" onClick={handleSave}>
               Save
+            </button>
+            <button type="button" className="button is-primary" onClick={handleSave}>
+              Execute
             </button>
           </div>
         </div>

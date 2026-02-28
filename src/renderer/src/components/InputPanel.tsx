@@ -1,13 +1,16 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 
 import { trpcClient } from '../trpc'
 import { useAgentStore } from '../store/useAgentStore'
+import { useAppStore } from '../store/useAppStore'
 
 const InputPanel = () => {
   const userIntent = useAgentStore((state) => state.userIntent)
   const systemPrompt = useAgentStore((state) => state.systemPrompt)
   const maxIterations = useAgentStore((state) => state.maxIterations)
+  const useSmartContext = useAgentStore((state) => state.useSmartContext)
+  const useSeriesGeneration = useAgentStore((state) => state.useSeriesGeneration)
   const autoApprove = useAgentStore((state) => state.autoApprove)
   const attachments = useAgentStore((state) => state.attachments)
   const hasHistory = useAgentStore((state) => state.chatHistory.length > 0)
@@ -16,35 +19,62 @@ const InputPanel = () => {
   const setUserIntent = useAgentStore((state) => state.setUserIntent)
   const setSystemPrompt = useAgentStore((state) => state.setSystemPrompt)
   const setMaxIterations = useAgentStore((state) => state.setMaxIterations)
+  const setUseSmartContext = useAgentStore((state) => state.setUseSmartContext)
+  const setUseSeriesGeneration = useAgentStore((state) => state.setUseSeriesGeneration)
   const setAutoApprove = useAgentStore((state) => state.setAutoApprove)
   const addAttachments = useAgentStore((state) => state.addAttachments)
   const removeAttachment = useAgentStore((state) => state.removeAttachment)
   const executeIntent = useAgentStore((state) => state.executeIntent)
+  const generateDraft = useAgentStore((state) => state.generateDraft)
   const stopExecution = useAgentStore((state) => state.stopExecution)
 
-  const canSubmit = userIntent.trim().length > 0 && !isStreaming
+  const [isDrafting, setIsDrafting] = useState(false)
+
+  const canSubmit = userIntent.trim().length > 0 && !isStreaming && !isDrafting
+
+  const handleQuickSend = useCallback(async () => {
+    if (!canSubmit || isDrafting) {
+      return
+    }
+    setIsDrafting(true)
+    const draft = await generateDraft({ useSmartContext: true })
+    setIsDrafting(false)
+    if (!draft) {
+      return
+    }
+    void executeIntent(draft)
+  }, [canSubmit, executeIntent, generateDraft, isDrafting])
 
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      if (canSubmit) {
-        executeIntent()
-      }
+      void handleQuickSend()
     },
-    [canSubmit, executeIntent]
+    [handleQuickSend]
   )
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault()
-        if (!isStreaming) {
-          executeIntent()
-        }
+        void handleQuickSend()
       }
     },
-    [executeIntent, isStreaming]
+    [handleQuickSend]
   )
+
+  const handleDraftPlan = useCallback(async () => {
+    if (!canSubmit || isDrafting) {
+      return
+    }
+    setIsDrafting(true)
+    const draft = await generateDraft()
+    setIsDrafting(false)
+    if (!draft) {
+      return
+    }
+    useAppStore.getState().openFocusEditor(draft, () => undefined)
+  }, [canSubmit, generateDraft, isDrafting])
 
   const handleAttach = useCallback(async () => {
     try {
@@ -69,7 +99,9 @@ const InputPanel = () => {
           <div className="input-title">Your intent</div>
           <div className="input-subtitle">Describe what you want the agent to generate.</div>
         </div>
-        <div className="input-status">{isStreaming ? 'Running' : 'Ready'}</div>
+        <div className="input-status">
+          {isStreaming ? 'Running' : isDrafting ? 'Drafting' : 'Ready'}
+        </div>
       </div>
       {attachments.length > 0 ? (
         <div className="attachment-list">
@@ -88,6 +120,27 @@ const InputPanel = () => {
           ))}
         </div>
       ) : null}
+      <div className="context-bar">
+        <div className="context-bar-title">Draft controls</div>
+        <div className="context-bar-toggles">
+          <label className="input-toggle">
+            <input
+              type="checkbox"
+              checked={useSmartContext}
+              onChange={(event) => setUseSmartContext(event.target.checked)}
+            />
+            Smart Context
+          </label>
+          <label className="input-toggle">
+            <input
+              type="checkbox"
+              checked={useSeriesGeneration}
+              onChange={(event) => setUseSeriesGeneration(event.target.checked)}
+            />
+            Series generation
+          </label>
+        </div>
+      </div>
       <textarea
         className="input-textarea"
         rows={4}
@@ -123,12 +176,20 @@ const InputPanel = () => {
             type="button"
             className="button is-secondary"
             onClick={() => void handleAttach()}
-            disabled={isStreaming}
+            disabled={isStreaming || isDrafting}
           >
             Attach Files
           </button>
-          <button type="submit" className="button is-primary" disabled={!canSubmit}>
-            {hasHistory ? 'Refine' : 'Generate'}
+          <button type="submit" className="button is-secondary" disabled={!canSubmit}>
+            Quick Send
+          </button>
+          <button
+            type="button"
+            className="button is-primary"
+            onClick={() => void handleDraftPlan()}
+            disabled={!canSubmit}
+          >
+            Draft Plan
           </button>
         </div>
       </div>

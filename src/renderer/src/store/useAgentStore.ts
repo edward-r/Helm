@@ -3,8 +3,8 @@ import { create } from 'zustand'
 import { trpcClient } from '../trpc'
 import { useAppStore } from './useAppStore'
 import type {
+  ExecuteAgentInput,
   ExecutorResult,
-  ExecutorRunInput,
   ExecutorStreamEvent,
   Message,
   ValidationReport,
@@ -18,6 +18,8 @@ type AgentState = {
   systemPrompt: string
   userIntent: string
   maxIterations: string
+  useSmartContext: boolean
+  useSeriesGeneration: boolean
   autoApprove: boolean
   attachments: string[]
   chatHistory: Message[]
@@ -32,9 +34,12 @@ type AgentState = {
   activeSessionId: string | null
   sessions: SessionRecord[]
   streamingReasoning: string
+  systemPromptForRun: string | null
   setSystemPrompt: (value: string) => void
   setUserIntent: (value: string) => void
   setMaxIterations: (value: string) => void
+  setUseSmartContext: (value: boolean) => void
+  setUseSeriesGeneration: (value: boolean) => void
   setAutoApprove: (value: boolean) => void
   addAttachments: (paths: string[]) => void
   removeAttachment: (path: string) => void
@@ -44,7 +49,11 @@ type AgentState = {
   runValidation: (text: string) => Promise<void>
   openSettings: () => void
   closeSettings: () => void
-  executeIntent: () => Promise<void>
+  executeIntent: (promptOverride?: string) => Promise<void>
+  generateDraft: (options?: {
+    useSmartContext?: boolean
+    useSeriesGeneration?: boolean
+  }) => Promise<string | null>
   stopExecution: () => void
   submitApproval: (approved: boolean) => Promise<void>
   setActiveSessionId: (sessionId: string | null) => void
@@ -152,6 +161,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   userIntent: DEFAULT_USER_INTENT,
   maxIterations: DEFAULT_MAX_ITERATIONS,
+  useSmartContext: true,
+  useSeriesGeneration: false,
   autoApprove: false,
   attachments: [],
   chatHistory: [],
@@ -166,9 +177,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   activeSessionId: null,
   sessions: [],
   streamingReasoning: '',
+  systemPromptForRun: null,
   setSystemPrompt: (value) => set({ systemPrompt: value }),
   setUserIntent: (value) => set({ userIntent: value }),
   setMaxIterations: (value) => set({ maxIterations: value }),
+  setUseSmartContext: (value) => set({ useSmartContext: value }),
+  setUseSeriesGeneration: (value) => set({ useSeriesGeneration: value }),
   setAutoApprove: (value) => set({ autoApprove: value }),
   addAttachments: (paths) =>
     set((state) => {
@@ -189,7 +203,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       finalResult: null,
       streamError: null,
       pendingApproval: null,
-      streamingReasoning: ''
+      streamingReasoning: '',
+      systemPromptForRun: null
     }),
   clearHistory: () =>
     set({
@@ -199,7 +214,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       validationReport: null,
       isValidating: false,
       activeSessionId: null,
-      streamingReasoning: ''
+      streamingReasoning: '',
+      systemPromptForRun: null
     }),
   runValidation: async (text) => {
     set({ isValidating: true })
@@ -213,6 +229,35 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'Validation failed.'
       console.error(message)
       set({ validationReport: null, isValidating: false })
+    }
+  },
+  generateDraft: async (options) => {
+    const { userIntent, useSmartContext, useSeriesGeneration } = get()
+    const trimmedIntent = userIntent.trim()
+    const trimmedModel = useAppStore.getState().selectedModel.trim()
+
+    const smartContextEnabled = options?.useSmartContext ?? useSmartContext
+    const seriesEnabled = options?.useSeriesGeneration ?? useSeriesGeneration
+
+    if (!trimmedIntent || !trimmedModel) {
+      set({ streamError: 'Intent and model are required.' })
+      return null
+    }
+
+    try {
+      set({ streamError: null })
+      const draft = await trpcClient.generateDraft.mutate({
+        userIntent: trimmedIntent,
+        useSmartContext: smartContextEnabled,
+        useSeriesGeneration: seriesEnabled,
+        model: trimmedModel
+      })
+      return draft
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Draft generation failed.'
+      console.error(message)
+      set({ streamError: message })
+      return null
     }
   },
   openSettings: () => set({ isSettingsOpen: true }),
@@ -243,7 +288,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       pendingApproval: null,
       isStreaming: false,
       userIntent: '',
-      streamingReasoning: ''
+      streamingReasoning: '',
+      systemPromptForRun: null
     })
   },
   loadSessionMessages: async (sessionId: string) => {
@@ -277,14 +323,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         streamError: null,
         pendingApproval: null,
         isStreaming: false,
-        streamingReasoning: ''
+        streamingReasoning: '',
+        systemPromptForRun: null
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load session messages.'
       console.error(message)
     }
   },
-  executeIntent: async () => {
+  executeIntent: async (promptOverride) => {
     const {
       systemPrompt,
       userIntent,
@@ -296,13 +343,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     } = get()
     const trimmedSystemPrompt = systemPrompt.trim()
     const trimmedIntent = userIntent.trim()
+    const resolvedPrompt = (promptOverride ?? trimmedIntent).trim()
     const trimmedModel = useAppStore.getState().selectedModel.trim()
     const persona = useAppStore.getState().activePersona
-    const intentForRun = trimmedIntent
+    const promptForRun = resolvedPrompt
     const historyForRun = chatHistory.length > 0 ? chatHistory : undefined
 
-    if (!trimmedSystemPrompt || !trimmedIntent || !trimmedModel) {
-      set({ streamError: 'System prompt, intent, and model are required.' })
+    if (!trimmedSystemPrompt || !promptForRun || !trimmedModel) {
+      set({ streamError: 'System prompt, prompt, and model are required.' })
       return
     }
 
@@ -314,13 +362,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       streamError: null,
       isStreaming: true,
       pendingApproval: null,
-      streamingReasoning: ''
+      streamingReasoning: '',
+      systemPromptForRun: null
     })
 
     let sessionIdForRun = activeSessionId
     if (!sessionIdForRun && chatHistory.length === 0) {
       const newSessionId = crypto.randomUUID()
-      const title = trimmedIntent.length > 72 ? `${trimmedIntent.slice(0, 69)}...` : trimmedIntent
+      const title = promptForRun.length > 72 ? `${promptForRun.slice(0, 69)}...` : promptForRun
       try {
         await trpcClient.createSession.mutate({
           id: newSessionId,
@@ -339,9 +388,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     const maxIterationsValue = normalizeMaxIterations(maxIterations)
 
-    const input: ExecutorRunInput = {
+    const input: ExecuteAgentInput = {
       systemPrompt: trimmedSystemPrompt,
-      userIntent: trimmedIntent,
+      promptText: promptForRun,
       model: trimmedModel,
       persona,
       ...(maxIterationsValue ? { maxIterations: maxIterationsValue } : {}),
@@ -358,7 +407,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           id: crypto.randomUUID(),
           sessionId: sessionIdForRun,
           role: 'user',
-          content: intentForRun
+          content: promptForRun
         })
         void get().loadSessions()
       } catch (error) {
@@ -369,9 +418,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     let accumulatedReasoning = ''
 
-    activeSubscription = trpcClient.executorStream.subscribe(input, {
+    activeSubscription = trpcClient.executeAgent.subscribe(input, {
       onData: (event) => {
         const streamEvent = event as ExecutorStreamEvent
+        if (streamEvent.event === 'system_prompt') {
+          set({ systemPromptForRun: streamEvent.prompt })
+          return
+        }
         if (streamEvent.event === 'reasoning') {
           accumulatedReasoning += streamEvent.delta
           set((state) => {
@@ -431,7 +484,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 ? extractChatHistory(historyWithReasoning)
                 : [
                     ...state.chatHistory,
-                    { role: 'user', content: intentForRun },
+                    { role: 'user', content: promptForRun },
                     {
                       role: 'assistant',
                       content: streamEvent.result.value.text,

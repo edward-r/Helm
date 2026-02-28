@@ -565,6 +565,31 @@
   margin-top: 4px;
 }
 
+.timeline-prompt {
+  border: 1px solid var(--ps-border);
+  border-radius: 16px;
+  background: var(--ps-panel-strong);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.timeline-prompt-summary {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ps-slate-2);
+  cursor: pointer;
+}
+
+.timeline-prompt-body {
+  margin: 0;
+  padding: 12px;
+  border-top: 1px solid var(--ps-border);
+  font-size: 12px;
+  color: var(--ps-slate-1);
+  white-space: pre-wrap;
+}
+
 .timeline-list {
   display: flex;
   flex-direction: column;
@@ -931,6 +956,34 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.context-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--ps-border);
+  background: rgba(255, 255, 255, 0.55);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.context-bar-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ps-slate-3);
+  font-weight: 600;
+}
+
+.context-bar-toggles {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .attachment-chip {

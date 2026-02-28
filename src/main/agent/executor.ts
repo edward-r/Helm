@@ -37,7 +37,8 @@ import {
   type ToolExecutionIo,
   summarizeToolExecution
 } from './tool-execution-result'
-import { BASE_SYSTEM_PROMPT, PERSONA_PROMPTS } from './system-prompts'
+import { isReasoningModel } from './model-capabilities'
+import { buildSystemPrompt, PERSONA_PROMPTS } from './system-prompts'
 
 export type ExecutorInput = {
   systemPrompt: string
@@ -48,6 +49,7 @@ export type ExecutorInput = {
   attachments?: string[]
   history?: Message[]
   persona?: string
+  onSystemPrompt?: (prompt: string) => void
   onThinkingEvent?: (event: ThinkingEvent) => void
   onReasoningEvent?: (event: { delta: string }) => void
   onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>
@@ -126,7 +128,16 @@ const VIDEO_MIME_TYPES: Record<string, string> = {
 export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorResult> => {
   const activePersona = (input.persona || 'builder') as Persona
   const specificInstruction = PERSONA_PROMPTS[activePersona] ?? PERSONA_PROMPTS.builder
-  const finalSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nYour Current Persona: ${specificInstruction}`
+  const isNativeReasoning = isReasoningModel(input.model)
+  const finalSystemPrompt = buildSystemPrompt(specificInstruction, isNativeReasoning)
+  const userPromptForModel = input.userIntent
+  const attachmentsNote = input.attachments?.length
+    ? `\n\nATTACHMENTS:\n${input.attachments.join('\n')}`
+    : ''
+  emitSystemPrompt(
+    input.onSystemPrompt,
+    `SYSTEM:\n${finalSystemPrompt}\n\nUSER:\n${userPromptForModel}${attachmentsNote}`
+  )
 
   const history = input.history ?? []
   const hasHistory = history.length > 0
@@ -134,13 +145,13 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
     ? [...history]
     : await createInitialHistory(
         finalSystemPrompt,
-        input.userIntent,
+        userPromptForModel,
         input.model,
         input.attachments
       )
 
   if (hasHistory) {
-    const userMessage = await buildUserMessage(input.userIntent, input.model, input.attachments)
+    const userMessage = await buildUserMessage(userPromptForModel, input.model, input.attachments)
     const systemMessage: Message = { role: 'system', content: finalSystemPrompt }
     const historyWithoutSystem = currentHistory.filter((message) => message.role !== 'system')
     currentHistory = [systemMessage, ...historyWithoutSystem, userMessage]
@@ -237,40 +248,52 @@ export const executeExecutor = async (input: ExecutorInput): Promise<ExecutorRes
     // Plain-text finalization: when no tool calls are present, return the
     // assistant text immediately and append it once to history.
     if (normalized.kind === 'finalText') {
-      let parsedResponse: { reasoning: string; final_text: string } = {
-        reasoning: '',
-        final_text: normalized.text
-      }
+      let finalText = normalized.text
+      let extractedReasoning = ''
+
       try {
-        const parsed = JSON.parse(normalized.text)
-        if (isRecord(parsed)) {
-          const reasoning =
-            typeof parsed.reasoning === 'string' ? parsed.reasoning : parsedResponse.reasoning
-          const finalText =
-            typeof parsed.final_text === 'string' ? parsed.final_text : parsedResponse.final_text
-          parsedResponse = { reasoning, final_text: finalText }
+        if (isNativeReasoning) {
+          const reasoningContent = extractXmlTagContent(normalized.text, 'reasoning')
+          const messageContent = extractXmlTagContent(normalized.text, 'message')
+
+          if (reasoningContent !== null) {
+            extractedReasoning = reasoningContent.trim()
+          }
+          if (messageContent !== null) {
+            finalText = messageContent.trim()
+          }
+        } else {
+          const cleanJson = normalized.text
+            .replace(/^\s*```[a-z]*\n/i, '')
+            .replace(/\n```\s*$/i, '')
+            .trim()
+          const parsed = JSON.parse(cleanJson)
+          if (isRecord(parsed)) {
+            if (typeof parsed.reasoning === 'string') {
+              extractedReasoning = parsed.reasoning.trim()
+            }
+            if (typeof parsed.message === 'string') {
+              finalText = parsed.message.trim()
+            }
+          }
         }
       } catch {
-        // fall back to raw text
+        console.warn('Failed to parse structured output, falling back to raw text.')
       }
 
-      if (parsedResponse.reasoning.trim()) {
+      if (extractedReasoning.trim()) {
         reasoningTrace = reasoningTrace
-          ? `${reasoningTrace}\n${parsedResponse.reasoning}`
-          : parsedResponse.reasoning
-        emitReasoningEvent(input.onReasoningEvent, { delta: parsedResponse.reasoning })
+          ? `${reasoningTrace}\n${extractedReasoning}`
+          : extractedReasoning
+        emitReasoningEvent(input.onReasoningEvent, { delta: extractedReasoning })
       }
 
-      const assistantMessage = buildAssistantMessage(
-        parsedResponse.final_text,
-        undefined,
-        reasoningTrace
-      )
+      const assistantMessage = buildAssistantMessage(finalText, undefined, reasoningTrace)
       const finalHistory = appendMessages(currentHistory, assistantMessage)
       return {
         ok: true,
         value: {
-          text: parsedResponse.final_text,
+          text: finalText,
           messages: finalHistory,
           ...(lastPlans ? { toolPlans: lastPlans } : {}),
           ...(reasoningTrace ? { reasoning: reasoningTrace } : {})
@@ -663,6 +686,13 @@ const emitThinkingEvent = (
   handler({ event: 'thinking', ...payload })
 }
 
+const emitSystemPrompt = (handler: ExecutorInput['onSystemPrompt'], prompt: string): void => {
+  if (!handler) {
+    return
+  }
+  handler(prompt)
+}
+
 const emitReasoningEvent = (
   handler: ExecutorInput['onReasoningEvent'],
   payload: { delta: string }
@@ -850,6 +880,26 @@ const extractAssistantText = (result: LLMResult): string | null => {
   }
   const trimmed = result.content.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+const extractXmlTagContent = (value: string, tag: string): string | null => {
+  const match = value.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'))
+  if (!match) {
+    return null
+  }
+  const raw = match[1].trim()
+  if (!raw) {
+    return ''
+  }
+  const wrappedCdata = raw.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/i)
+  if (wrappedCdata) {
+    return wrappedCdata[1].trim()
+  }
+  const innerCdata = raw.match(/<!\[CDATA\[([\s\S]*?)\]\]>/i)
+  if (innerCdata) {
+    return innerCdata[1].trim()
+  }
+  return raw
 }
 
 const truncateBestKnownText = (value: string): string => {
