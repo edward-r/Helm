@@ -37,7 +37,7 @@ const InputPanel = () => {
       return
     }
     setIsDrafting(true)
-    const draft = await generateDraft({ useSmartContext: true })
+    const draft = await generateDraft({ useSmartContext, useSeriesGeneration: false })
     setIsDrafting(false)
     if (!draft) {
       return
